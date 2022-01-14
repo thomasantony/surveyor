@@ -100,65 +100,8 @@ impl Surveyor {
             context.AddMeshWithOffset(mesh.to_string(), &ofs);
         }
     }
-    fn calc_empty_mass(&self, context: &VesselContext) -> f64 {
-        let mut empty_mass = 0.0;
-        // Jettison AMR when retro starts firing
-        if context.GetPropellantMass(self.ph_retro) > 0.999 * RETRO_PROP_MASS {
-            empty_mass += AMR_MASS;
-        }
-        // Add in retro mass while there is still retro fuel left
-        if context.GetPropellantMass(self.ph_retro) > 1. {
-            empty_mass += RETRO_EMPTY_MASS;
-        }
-        empty_mass += LANDER_EMPTY_MASS;
-        return empty_mass;
-    }
-    fn spawn_object(&self, context: &VesselContext, classname: &str, ext: &str, offset: &Vector3) {
-        let mut vs = VesselStatus::default();
-
-        context.GetStatus(&mut vs);
-        context.Local2Rel(offset, &mut vs.rpos);
-
-        vs.eng_main = 0.0;
-        vs.eng_hovr = 0.0;
-        vs.status = 0;
-        let new_object_name = format!("{}{}", context.GetName(), ext);
-
-        oapi_create_vessel(new_object_name, classname.to_owned(), &vs);
-    }
-    fn jettison(&mut self, context: &VesselContext) {
-        use SurveyorState::*;
-        match self.vehicle_state {
-            BeforeRetroIgnition => {
-                self.vehicle_state = RetroFiring;
-                self.spawn_object(context, "Surveyor_AMR", "-AMR", _V!(0., 0., -0.6));
-            }
-            RetroFiring => {
-                self.vehicle_state = AfterRetro;
-                self.spawn_object(context, "Surveyor_Retro", "-Retro", _V!(0., 0., -0.5));
-            }
-            _ => {}
-        }
-        self.setup_meshes(context);
-    }
-}
-impl OrbiterVessel for Surveyor {
-    fn set_class_caps(&mut self, context: &VesselContext, _cfg: FileHandle) {
-        context.SetSize(1.0);
-        context.SetPMI(_V!(0.50, 0.50, 0.50));
-        context.SetTouchdownPoints(
-            _V!(0.0, LEG_RAD, LEG_Z),
-            _V!(
-                (60.0f64).to_radians().sin() * LEG_RAD,
-                -0.5 * LEG_RAD,
-                LEG_Z
-            ),
-            _V!(
-                -(60.0f64).to_radians().sin() * LEG_RAD,
-                -0.5 * LEG_RAD,
-                LEG_Z
-            ),
-        );
+    fn setup_thrusters(&mut self, context: &VesselContext)
+    {
         // Create Propellant Resources
         self.ph_vernier = context.CreatePropellantResource(VERNIER_PROP_MASS);
         self.ph_rcs = context.CreatePropellantResource(RCS_PROP_MASS);
@@ -291,7 +234,67 @@ impl OrbiterVessel for Surveyor {
             RETRO_ISP,
         );
         context.AddExhaust(self.th_retro, 2.0, 0.3);
+    }
+    fn calc_empty_mass(&self, context: &VesselContext) -> f64 {
+        let mut empty_mass = 0.0;
+        // Jettison AMR when retro starts firing
+        if context.GetPropellantMass(self.ph_retro) > 0.999 * RETRO_PROP_MASS {
+            empty_mass += AMR_MASS;
+        }
+        // Add in retro mass while there is still retro fuel left
+        if context.GetPropellantMass(self.ph_retro) > 1. {
+            empty_mass += RETRO_EMPTY_MASS;
+        }
+        empty_mass += LANDER_EMPTY_MASS;
+        return empty_mass;
+    }
+    fn spawn_object(&self, context: &VesselContext, classname: &str, ext: &str, offset: &Vector3) {
+        let mut vs = VesselStatus::default();
 
+        context.GetStatus(&mut vs);
+        context.Local2Rel(offset, &mut vs.rpos);
+
+        vs.eng_main = 0.0;
+        vs.eng_hovr = 0.0;
+        vs.status = 0;
+        let new_object_name = format!("{}{}", context.GetName(), ext);
+
+        oapi_create_vessel(new_object_name, classname.to_owned(), &vs);
+    }
+    fn jettison(&mut self, context: &VesselContext) {
+        use SurveyorState::*;
+        match self.vehicle_state {
+            BeforeRetroIgnition => {
+                self.vehicle_state = RetroFiring;
+                self.spawn_object(context, "Surveyor_AMR", "-AMR", _V!(0., 0., -0.6));
+            }
+            RetroFiring => {
+                self.vehicle_state = AfterRetro;
+                self.spawn_object(context, "Surveyor_Retro", "-Retro", _V!(0., 0., -0.5));
+            }
+            _ => {}
+        }
+        self.setup_meshes(context);
+    }
+}
+impl OrbiterVessel for Surveyor {
+    fn set_class_caps(&mut self, context: &VesselContext, _cfg: FileHandle) {
+        context.SetSize(1.0);
+        context.SetPMI(_V!(0.50, 0.50, 0.50));
+        context.SetTouchdownPoints(
+            _V!(0.0, LEG_RAD, LEG_Z),
+            _V!(
+                (60.0f64).to_radians().sin() * LEG_RAD,
+                -0.5 * LEG_RAD,
+                LEG_Z
+            ),
+            _V!(
+                -(60.0f64).to_radians().sin() * LEG_RAD,
+                -0.5 * LEG_RAD,
+                LEG_Z
+            ),
+        );
+        self.setup_thrusters(context);
         context.SetEmptyMass(LANDER_EMPTY_MASS);
 
         // camera parameters
