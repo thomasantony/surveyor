@@ -69,8 +69,9 @@ impl Default for SurveyorState {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Surveyor {
+    ctx: &'static mut VesselContext,
     th_vernier: Vec<ThrusterHandle>,
     th_rcs: Vec<ThrusterHandle>,
     th_retro: ThrusterHandle,
@@ -84,6 +85,22 @@ pub struct Surveyor {
     yawrate_target: f64,
 }
 impl Surveyor {
+    pub fn new(ctx: &'static mut VesselContext) -> Self {
+        Self { 
+            ctx,
+            th_vernier: Vec::new(),
+            th_rcs: Vec::new(),
+            th_retro: ThrusterHandle::default(),
+            ph_vernier: PropellantHandle::default(),
+            ph_retro: PropellantHandle::default(),
+            ph_rcs: PropellantHandle::default(),
+            vehicle_state: SurveyorState::default(),
+
+            pitchrate_target: 0.0,
+            rollrate_target: 0.0,
+            yawrate_target: 0.0,
+        }
+    }
     fn setup_meshes(&mut self, context: &VesselContext) {
         context.ClearMeshes();
         let mut meshes = Vec::new();
@@ -313,7 +330,7 @@ impl OrbiterVessel for Surveyor {
                 LEG_Z
             ),
         );
-        self.setup_thrusters(context);
+        self.setup_thrusters(self.ctx);
         context.SetEmptyMass(LANDER_EMPTY_MASS);
 
         // camera parameters
@@ -364,7 +381,7 @@ impl OrbiterVessel for Surveyor {
         let pitch_rate = ang_vel.x();
         let yaw_rate = ang_vel.y();
         let roll_rate = ang_vel.z();
-        ODebug(&format!("Rates: Pitch: {}/{}, Yaw: {}/{}, Roll: {}/{}", pitch_rate, self.pitchrate_target, 
+        ODebug(&format!("Rates: Pitch: {:.2}/{:.2}, Yaw: {:.2}/{:.2}, Roll: {:.2}/{:.2}", pitch_rate, self.pitchrate_target, 
                         yaw_rate, self.yawrate_target, roll_rate, self.rollrate_target));
     }
     fn consume_buffered_key(
@@ -404,6 +421,11 @@ impl OrbiterVessel for Surveyor {
             }else if key == Key::E {
                 self.yawrate_target += 5f64.to_radians();
                 1
+            }else if key == Key::X {
+                self.pitchrate_target = 0.;
+                self.yawrate_target = 0.;
+                self.rollrate_target = 0.;
+                1
             }else{
                 0
             }
@@ -412,9 +434,9 @@ impl OrbiterVessel for Surveyor {
 }
 
 init_vessel!(
-    fn init(_h_vessel: OBJHANDLE, _flight_model: i32) -> Surveyor 
+    fn init2(vessel) 
     {
-        Surveyor::default()
+        Surveyor::new(vessel)
     }
     fn exit() {}
 );
