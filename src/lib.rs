@@ -276,6 +276,25 @@ impl Surveyor {
         }
         self.setup_meshes(context);
     }
+    fn apply_thrusters(&mut self, context: &VesselContext, f_1: f64, f_2: f64, f_3: f64, theta_1: f64)
+    {
+        let f_1 = f_1.clamp(0.0, 1.0);
+        let f_2 = f_2.clamp(0.0,1.0);
+        let f_3 = f_3.clamp(0.0, 1.0);
+        let theta_1 = theta_1.clamp(-5f64.to_radians(), 5f64.to_radians());
+        context.SetThrusterLevel(self.th_vernier[0], f_1);
+        context.SetThrusterLevel(self.th_vernier[1], f_2);
+        context.SetThrusterLevel(self.th_vernier[2], f_3);
+
+        let t1_sin = theta_1.sin();
+        let t1_cos = theta_1.cos();
+
+        let thruster1_dir = _V!(t1_sin, 0.0, t1_cos);
+        context.SetThrusterDir(
+            self.th_vernier[0],
+            thruster1_dir,
+        );
+    }
 }
 impl OrbiterVessel for Surveyor {
     fn set_class_caps(&mut self, context: &VesselContext, _cfg: FileHandle) {
