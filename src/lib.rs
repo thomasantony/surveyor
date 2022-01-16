@@ -36,7 +36,7 @@ const LEG_RAD: f64 = 1.5;
 const LEG_Z: f64 = -0.6;
 
 
-const ANGVEL_GAIN: f64 = 1.0;
+const GRAVITY_TURN_POINTING_GAIN: f64 = 10.0;
 
 
 lazy_static! {
@@ -303,9 +303,19 @@ impl Surveyor {
     {
 
     }
-    /// Computes the change in roll/pitch/yaw to point the vehicle towards
-    /// the surface retro-grade direction
-    fn compute_angvel_for_pointing(&mut self, context: &VesselContext) -> Vector3
+    /// Uses a proportional gain to convert a given rotation (in angle+axis form) to
+    /// an angular velocity vector
+    fn pointing_controller(&mut self, rotation_axis: Vector3, rotation_angle: f64) -> Vector3 
+    {
+        let ang_vel_magnitude = rotation_angle * GRAVITY_TURN_POINTING_GAIN;
+        // Scale the rotation axis vector by the magnitude to get the angular velocity vector
+        let target_ang_vel = rotation_axis * ang_vel_magnitude;
+
+        target_ang_vel
+    }
+    /// Computes the rotation in angle/axis form to point the roll axis towards the
+    /// retrograde direction
+    fn compute_rotation_for_gravity_turn(&mut self, context: &VesselContext) -> (Vector3, f64)
     {
         let mut airspeed = Vector3::default();
         // Compute velocity vector in vehicle's local frame of reference
@@ -323,12 +333,7 @@ impl Surveyor {
 
         // We need to use a controller to drive `rotation_angle` to zero
         let rotation_angle = roll_axis.dot(&target_orientation);
-
-        let ang_vel_magnitude = rotation_angle * ANGVEL_GAIN;
-        // Scale the rotation axis vector by the magnitude to get the angular velocity vector
-        let target_ang_vel = rotation_axis * ang_vel_magnitude;
-
-        target_ang_vel
+        (rotation_axis, rotation_angle)
     }
     fn compute_ang_acc_for_target_angular_vel(&mut self, context: &VesselContext, target_ang_vel: &Vector3)
     {
