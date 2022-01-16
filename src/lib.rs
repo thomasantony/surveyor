@@ -37,27 +37,28 @@ const LEG_Z: f64 = -0.6;
 
 
 const GRAVITY_TURN_POINTING_GAIN: f64 = 10.0;
-
+const ANGULAR_RATE_CONTROLLER_GAIN: f64 = 2.0;
 
 lazy_static! {
-    static ref THRUSTER1_POS: Vector3 = Vector3::new(0.0 * VERNIER_RAD, 1.0 * VERNIER_RAD, VERNIER_Z);
-    static ref THRUSTER2_POS: Vector3 = Vector3::new(
+    static ref SURVEYOR_PMI: Vector3 = V!(0.50, 0.50, 0.50);
+    static ref THRUSTER1_POS: Vector3 = V!(0.0 * VERNIER_RAD, 1.0 * VERNIER_RAD, VERNIER_Z);
+    static ref THRUSTER2_POS: Vector3 = V!(
         (60.0f64).to_radians().sin() * VERNIER_RAD,
         -0.5 * VERNIER_RAD,
         VERNIER_Z
     );
-    static ref THRUSTER3_POS: Vector3 = Vector3::new(
+    static ref THRUSTER3_POS: Vector3 = V!(
         -(60.0f64).to_radians().sin() * VERNIER_RAD,
         -0.5 * VERNIER_RAD,
         VERNIER_Z
     );
 
-    static ref DIR_X_PLUS: Vector3 = Vector3::new(1., 0., 0.);
-    static ref DIR_X_MINUS: Vector3 = Vector3::new(-1., 0., 0.);
-    static ref DIR_Y_PLUS: Vector3 = Vector3::new(0., 1., 0.);
-    static ref DIR_Y_MINUS: Vector3 = Vector3::new(0., -1., 0.);
-    static ref DIR_Z_PLUS: Vector3 = Vector3::new(0., 0., 1.);
-    static ref DIR_Z_MINUS: Vector3 = Vector3::new(0., 0., 1.);
+    static ref DIR_X_PLUS: Vector3 = V!(1., 0., 0.);
+    static ref DIR_X_MINUS: Vector3 = V!(-1., 0., 0.);
+    static ref DIR_Y_PLUS: Vector3 = V!(0., 1., 0.);
+    static ref DIR_Y_MINUS: Vector3 = V!(0., -1., 0.);
+    static ref DIR_Z_PLUS: Vector3 = V!(0., 0., 1.);
+    static ref DIR_Z_MINUS: Vector3 = V!(0., 0., 1.);
 }
 
 #[derive(Debug, PartialEq)]
@@ -347,7 +348,7 @@ impl Surveyor {
 impl OrbiterVessel for Surveyor {
     fn set_class_caps(&mut self, context: &VesselContext, _cfg: FileHandle) {
         context.SetSize(1.0);
-        context.SetPMI(&V!(0.50, 0.50, 0.50));
+        context.SetPMI(&SURVEYOR_PMI);
         context.SetTouchdownPoints(
             &V!(0.0, LEG_RAD, LEG_Z),
             &V!(
