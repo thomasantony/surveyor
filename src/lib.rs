@@ -299,9 +299,8 @@ impl Surveyor {
         );
     }
     /// Converts angular acceleration vector into thrust components for vernier thrusters
-    fn compute_thrust_from_ang_acc(&mut self, context: &VesselContext)
+    fn compute_thrust_from_ang_acc(&mut self, context: &VesselContext, angular_acc: &Vector3)
     {
-
     }
     /// Uses a proportional gain to convert a given rotation (in angle+axis form) to
     /// an angular velocity vector
@@ -335,9 +334,14 @@ impl Surveyor {
         let rotation_angle = roll_axis.dot(&target_orientation);
         (rotation_axis, rotation_angle)
     }
-    fn compute_ang_acc_for_target_angular_vel(&mut self, context: &VesselContext, target_ang_vel: &Vector3)
+    /// Computes the angular acceleration required to achieve targeted angular velocity
+    /// Uses a proportional controller
+    fn angular_rate_controller(&mut self, context: &VesselContext, target_ang_vel: &Vector3) -> Vector3
     {
-
+        let mut current_angular_vel = Vector3::default();
+        context.GetAngularVel(&mut current_angular_vel);
+        let angular_acc = (current_angular_vel - target_ang_vel) * ANGULAR_RATE_CONTROLLER_GAIN;
+        angular_acc
     }
 }
 impl OrbiterVessel for Surveyor {
