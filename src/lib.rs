@@ -35,11 +35,13 @@ const AMR_MASS: f64 = 3.82;
 const LEG_RAD: f64 = 1.5;
 const LEG_Z: f64 = -0.6;
 
-
+// Controller gains
 const GRAVITY_TURN_POINTING_GAIN: f64 = 0.3;
 const PITCH_RATE_GAIN: f64 = 4.0;
-const YAW_RATE_GAIN: f64 = 3.0;
+const YAW_RATE_GAIN: f64 = 2.0;
 const ROLL_RATE_GAIN: f64 = 10.0;
+const THRUST_CONTROL_GAIN: f64 = 0.01;
+const LUNAR_GRAVITY: f64 = 1.625; // m/s^2
 
 lazy_static! {
     static ref SURVEYOR_PMI: Vector3 = V!(0.50, 0.50, 0.50);
@@ -89,6 +91,8 @@ pub struct Surveyor {
     pitchrate_target: f64,
     rollrate_target: f64,
     yawrate_target: f64,
+
+    last_thrust_level: f64,
 }
 impl Surveyor {
     fn setup_meshes(&mut self, context: &VesselContext) {
@@ -310,14 +314,14 @@ impl Surveyor {
     /// The `reference_thrust` value is used to compute the "known" value for thruster 1
     /// A minimum of 5% thrust is used if the reference is too low.
     #[allow(non_snake_case)]
-    fn compute_thrust_from_ang_acc(&mut self, vehicle_mass:f64, reference_thrust: f64, angular_acc: &Vector3) -> (f64 ,f64, f64, f64)
+    fn compute_thrust_from_ang_acc(&mut self, vehicle_mass:f64, reference_thrust_level: f64, angular_acc: &Vector3) -> (f64 ,f64, f64, f64)
     {
         if angular_acc.length() < 0.001
         {
-            return (0., 0., 0., 0.);
+            return (reference_thrust_level, reference_thrust_level, reference_thrust_level, 0.);
         }
-        // Fix thruster 1 at 5%
-        let F_1 = reference_thrust.max(0.2) * VERNIER_THRUST;
+        // Fix thruster 1 at 10%
+        let F_1 = reference_thrust_level.max(0.2);
 
         // Moments of inertia
         let [PMI_x, PMI_y, PMI_z] = SURVEYOR_PMI.0;
@@ -330,7 +334,7 @@ impl Surveyor {
         
         // Find limiting roll acceleration
         let SIN_5_DEG:f64 = 5f64.to_radians().sin();
-        let max_roll_acc = VERNIER_THRUST * SIN_5_DEG * y1 / I_z;
+        let max_roll_acc = SIN_5_DEG * y1 / I_z;
         
         // Account for Orbiter's left-handed coordinate system 
         let a_roll = angular_acc.z().clamp(-max_roll_acc, max_roll_acc);
@@ -354,7 +358,16 @@ impl Surveyor {
         let F_3 = ((M_x - M1x)/y2 - (M_y - M1y)/x2)/(y3/y2 - x3/x2);
         let F_2 = (M_x - M1x - F_3*y3)/y2;
         
-        (F_1/VERNIER_THRUST, F_2/VERNIER_THRUST, F_3/VERNIER_THRUST, theta_1)
+        (F_1, reference_thrust_level+F_2, reference_thrust_level+F_3, theta_1)
+    }
+    /// Computes requires thrust level based on vehicle state
+    fn thrust_controller(&mut self, context: &VesselContext) -> f64
+    {
+        let target_acc = 0.9 * LUNAR_GRAVITY;
+        let current_acc = self.get_vehicle_acceleration(context);
+
+        let thrust_change = THRUST_CONTROL_GAIN*(target_acc - current_acc);
+        thrust_change
     }
     /// Uses a proportional gain to convert a given rotation (in angle+axis form) to
     /// an angular velocity vector
@@ -440,7 +453,7 @@ impl OrbiterVessel for Surveyor {
     #[allow(non_snake_case)]
     fn on_pre_step(&mut self, context: &VesselContext, _sim_t: f64, _sim_dt: f64, _mjd: f64) {
         context.SetEmptyMass(self.calc_empty_mass(context));
-
+        
         let (rotation_axis, rotation_angle) = self.compute_rotation_for_gravity_turn(context);
         // Point spacecraft for gravity turn
         let angular_rate_target  = if self.enable_gravity_turn
@@ -452,7 +465,8 @@ impl OrbiterVessel for Surveyor {
         };
         // Get current main thruster level (assume zero for now)
         let reference_thrust  = if self.vehicle_state == SurveyorState::AfterRetro {
-            0.8
+            self.last_thrust_level = (self.last_thrust_level + self.thrust_controller(context)).clamp(0.0, 1.0);
+            self.last_thrust_level
         }else {
             0.0
         };
@@ -479,7 +493,7 @@ impl OrbiterVessel for Surveyor {
             context.SetThrusterLevel(self.th_retro, 1.0);
         }
         
-        debug_string!("Vehicle acceleration: {}", self.get_vehicle_acceleration(context));
+        debug_string!("Vehicle acceleration: {:.2} Lunar G's, {:.2}", self.get_vehicle_acceleration(context)/LUNAR_GRAVITY, self.last_thrust_level);
     }
     fn consume_buffered_key(
         &mut self,
