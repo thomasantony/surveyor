@@ -36,9 +36,9 @@ const LEG_RAD: f64 = 1.5;
 const LEG_Z: f64 = -0.6;
 
 
-const GRAVITY_TURN_POINTING_GAIN: f64 = 1.0;
+const GRAVITY_TURN_POINTING_GAIN: f64 = 0.3;
 const PITCH_RATE_GAIN: f64 = 4.0;
-const YAW_RATE_GAIN: f64 = 1.0;
+const YAW_RATE_GAIN: f64 = 3.0;
 const ROLL_RATE_GAIN: f64 = 10.0;
 
 lazy_static! {
@@ -360,7 +360,7 @@ impl Surveyor {
     /// an angular velocity vector
     fn pointing_controller(&mut self, rotation_axis: Vector3, rotation_angle: f64) -> Vector3 
     {
-        let ang_vel_magnitude = rotation_angle * GRAVITY_TURN_POINTING_GAIN;
+        let ang_vel_magnitude = -rotation_angle * GRAVITY_TURN_POINTING_GAIN;
         // Scale the rotation axis vector by the magnitude to get the angular velocity vector
         let target_ang_vel = rotation_axis * ang_vel_magnitude;
 
@@ -385,8 +385,8 @@ impl Surveyor {
         let rotation_axis = roll_axis.cross(&target_orientation).unit();
         
         // We need to use a controller to drive `rotation_angle` to zero
-        let rotation_angle = roll_axis.dot(&target_orientation);
-        debug_string!("Rot angle: {}, axis: {:.2} {:.2} {:.2}", rotation_angle, rotation_axis.x(), rotation_axis.y(), rotation_axis.z());
+        let rotation_angle = roll_axis.dot(&target_orientation).acos();
+        debug_string!("Rot angle: {}, airspeed: {:.2} {:.2} {:.2}", rotation_angle, target_orientation.x(), target_orientation.y(), target_orientation.z());
         (rotation_axis, rotation_angle)
     }
     /// Computes the angular acceleration required to achieve targeted angular velocity
