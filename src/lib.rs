@@ -11,8 +11,8 @@ use lazy_static::lazy_static;
 const VERNIER_PROP_MASS: f64 = 70.98;
 const VERNIER_ISP: f64 = 3200.0;
 const VERNIER_THRUST: f64 = 463.0;
-const VERNIER_RAD: f64 = 0.86;
-const VERNIER_Z: f64 = -0.5;
+const VERNIER_RAD: f64 = 0.5;
+const VERNIER_Z: f64 = -0.65;
 
 const RCS_PROP_MASS: f64 = 2.0;
 const RCS_ISP: f64 = 630.0;
@@ -201,30 +201,30 @@ impl Surveyor {
             RCS_ISP,
         ));
 
-        // Create RCS thruster groups
-        let mut th_group = [ThrusterHandle::default(), ThrusterHandle::default()];
+        // // Create RCS thruster groups
+        // let mut th_group = [ThrusterHandle::default(), ThrusterHandle::default()];
 
-        th_group[0] = self.th_rcs[3]; // -Z #1
-        th_group[1] = self.th_rcs[5]; // -Z #2
-        context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchdown);
+        // th_group[0] = self.th_rcs[3]; // -Z #1
+        // th_group[1] = self.th_rcs[5]; // -Z #2
+        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchdown);
 
-        th_group[0] = self.th_rcs[2]; // +Z #1
-        th_group[1] = self.th_rcs[4]; // +Z #2
-        context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchup);
+        // th_group[0] = self.th_rcs[2]; // +Z #1
+        // th_group[1] = self.th_rcs[4]; // +Z #2
+        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchup);
 
-        th_group[0] = self.th_rcs[0]; // +X
-        context.CreateThrusterGroup(&th_group[..1], ThrusterGroupType::AttBankright);
+        // th_group[0] = self.th_rcs[0]; // +X
+        // context.CreateThrusterGroup(&th_group[..1], ThrusterGroupType::AttBankright);
 
-        th_group[0] = self.th_rcs[1]; // -X
-        context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttBankleft);
+        // th_group[0] = self.th_rcs[1]; // -X
+        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttBankleft);
 
-        th_group[0] = self.th_rcs[3]; // -Z #1
-        th_group[1] = self.th_rcs[4]; // +Z #2
-        context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawright);
+        // th_group[0] = self.th_rcs[3]; // -Z #1
+        // th_group[1] = self.th_rcs[4]; // +Z #2
+        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawright);
 
-        th_group[0] = self.th_rcs[2]; // +Z #1
-        th_group[1] = self.th_rcs[5]; // -Z #2
-        context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawleft);
+        // th_group[0] = self.th_rcs[2]; // +Z #1
+        // th_group[1] = self.th_rcs[5]; // -Z #2
+        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawleft);
 
         for th in self.th_rcs.iter() {
             context.AddExhaust(*th, 0.1, 0.05);
@@ -301,10 +301,10 @@ impl Surveyor {
     }
     /// Converts angular acceleration vector into thrust components for vernier thrusters
     #[allow(non_snake_case)]
-    fn compute_thrust_from_ang_acc(&mut self, context: &VesselContext, angular_acc: &Vector3) -> (Vector3, f64)
+    fn compute_thrust_from_ang_acc(&mut self, angular_acc: &Vector3) -> (f64 ,f64, f64, f64)
     {
         // Fix thruster 1 at 5%
-        let F_1 = 0.05;
+        let F_1 = 0.01;
 
         // Moments of inertia
         let [I_x, I_y, I_z] = SURVEYOR_PMI.0;
@@ -312,22 +312,31 @@ impl Surveyor {
         // Thruster positions
         let [_, y1, z1] = THRUSTER1_POS.0;
         let [x2, y2, _] = THRUSTER2_POS.0;
-        let [x3, _, _] = THRUSTER3_POS.0;
+        let [x3, y3, _] = THRUSTER3_POS.0;
 
         let a_roll = angular_acc.z();
         let a_pitch = angular_acc.x();
         let a_yaw = angular_acc.y();
 
-        let theta_1 = (I_z * a_roll / (F_1 * y1)).asin();
+        let M_x = I_x * a_pitch;
+        let M_y = I_y * a_yaw;
+        let M_z = I_z * a_roll;
+
+        let SIN_5_DEG:f64 = 5f64.to_radians().sin();
+        let sin_theta_1 = M_z / (F_1 * y1);
+        // Limit the value so that we can do a proper arcsin
+        let sin_theta_1 = sin_theta_1.clamp(-SIN_5_DEG,SIN_5_DEG);
+
+        let theta_1 = sin_theta_1.asin();
         let (sin_th1, cos_th1) = (theta_1.sin(), theta_1.cos());
 
-        let rhs_1 = I_x * a_pitch + I_y * a_yaw - F_1 * (y1*cos_th1 + z1*sin_th1);
-        let rhs_2 = I_x * a_pitch - I_y * a_yaw + F_1 * (z1*sin_th1 - y1*cos_th1);
-
-        let F_3 = ((y2-x2)*rhs_1 - (y2 + x3)*rhs_2)/(2.0*x3*y2 - 2.0*x3*x2);
-        let F_2 = I_y*a_yaw - F_1*sin_th1*z1 - F_3*x3;
-
-        (V!(F_1, F_2, F_3), theta_1)
+        let M1x = F_1 * cos_th1 * y1;
+        let M1y = F_1 * sin_th1 * z1;
+        
+        let F_3 = ((M_x - M1x)/y2 - (M_y - M1y)/x2)/(y3/y2 - x3/x2);
+        let F_2 = (M_x - M1x - F_3*y3)/y2;
+        
+        (F_1, F_2, F_3, theta_1)
     }
     /// Uses a proportional gain to convert a given rotation (in angle+axis form) to
     /// an angular velocity vector
@@ -395,6 +404,7 @@ impl OrbiterVessel for Surveyor {
         context.SetCameraOffset(&V!(0.0, 0.8, 0.0));
         self.setup_meshes(context)
     }
+    #[allow(non_snake_case)]
     fn on_pre_step(&mut self, context: &VesselContext, _sim_t: f64, _sim_dt: f64, _mjd: f64) {
         context.SetEmptyMass(self.calc_empty_mass(context));
 
@@ -405,19 +415,26 @@ impl OrbiterVessel for Surveyor {
         let roll = context.GetThrusterGroupLevelByType(ThrusterGroupType::AttBankright)
             - context.GetThrusterGroupLevelByType(ThrusterGroupType::AttBankleft);
 
-        // Differential thrusting for attitude control
-        context.SetThrusterDir(
-            self.th_vernier[0],
-            &V!(5.0f64.to_radians().sin() * roll, 0.0, 1.0),
-        ); // Roll using the 5 degree offset
-        context.SetThrusterDir(
-            self.th_vernier[1],
-            &V!(0.0, 0.0, 1.0 + 0.05 * (pitch - yaw)),
-        );
-        context.SetThrusterDir(
-            self.th_vernier[2],
-            &V!(0.0, 0.0, 1.0 + 0.05 * (pitch + yaw)),
-        );
+        let (F_1, F_2, F_3, th1) = if pitch.abs() > 0.01 || yaw.abs() > 0.01 || roll.abs() > 0.01 {
+            self.compute_thrust_from_ang_acc(&(V!(-pitch, yaw, roll) * 0.1))
+        }else{
+            (0., 0., 0., 0.)
+        };
+        ODebug(&format!("Thrusters: {}, {}, {}, {} deg", F_1, F_2, F_3, th1.to_degrees()));
+        self.apply_thrusters(context, F_1, F_2, F_3, th1);
+        // // Differential thrusting for attitude control
+        // context.SetThrusterDir(
+        //     self.th_vernier[0],
+        //     &V!(5.0f64.to_radians().sin() * roll, 0.0, 1.0),
+        // ); // Roll using the 5 degree offset
+        // context.SetThrusterDir(
+        //     self.th_vernier[1],
+        //     &V!(0.0, 0.0, 1.0 + 0.05 * (pitch - yaw)),
+        // );
+        // context.SetThrusterDir(
+        //     self.th_vernier[2],
+        //     &V!(0.0, 0.0, 1.0 + 0.05 * (pitch + yaw)),
+        // );
 
         if self.vehicle_state == SurveyorState::RetroFiring
             && context.GetPropellantMass(self.ph_retro) < 1.0
@@ -439,8 +456,8 @@ impl OrbiterVessel for Surveyor {
         let pitch_rate = ang_vel.x();
         let yaw_rate = ang_vel.y();
         let roll_rate = ang_vel.z();
-        ODebug(&format!("Rates: Pitch: {}/{}, Yaw: {}/{}, Roll: {}/{}", pitch_rate, self.pitchrate_target, 
-                        yaw_rate, self.yawrate_target, roll_rate, self.rollrate_target));
+        // ODebug(&format!("Rates: Pitch: {}/{}, Yaw: {}/{}, Roll: {}/{}", pitch_rate, self.pitchrate_target, 
+        //                 yaw_rate, self.yawrate_target, roll_rate, self.rollrate_target));
     }
     fn consume_buffered_key(
         &mut self,
