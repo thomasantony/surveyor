@@ -41,6 +41,7 @@ const PITCH_RATE_GAIN: f64 = 4.0;
 const YAW_RATE_GAIN: f64 = 2.0;
 const ROLL_RATE_GAIN: f64 = 10.0;
 const THRUST_CONTROL_GAIN: f64 = 0.01;
+const CONST_VEL_THRUST_GAIN: f64 = 0.05;
 const LUNAR_GRAVITY: f64 = 1.625; // m/s^2
 
 lazy_static! {
@@ -360,13 +361,20 @@ impl Surveyor {
         
         (F_1, reference_thrust_level+F_2, reference_thrust_level+F_3, theta_1)
     }
-    /// Computes requires thrust level based on vehicle state
-    fn thrust_controller(&mut self, context: &VesselContext) -> f64
+    /// Computes requires thrust level to maintain a constant acceleration
+    fn const_acc_controller(&mut self, context: &VesselContext) -> f64
     {
         let target_acc = 0.9 * LUNAR_GRAVITY;
         let current_acc = self.get_vehicle_acceleration(context);
 
         let thrust_change = THRUST_CONTROL_GAIN*(target_acc - current_acc);
+        thrust_change
+    }
+    /// Computes requires thrust level to maintain constant velocity
+    fn const_velocity_controller(&mut self, context: &VesselContext, target_vel: f64) -> f64
+    {
+        let current_vel = self.get_surface_approach_vel(context);
+        let thrust_change = -CONST_VEL_THRUST_GAIN*(target_vel - current_vel);
         thrust_change
     }
     /// Uses a proportional gain to convert a given rotation (in angle+axis form) to
@@ -399,7 +407,7 @@ impl Surveyor {
         
         // We need to use a controller to drive `rotation_angle` to zero
         let rotation_angle = roll_axis.dot(&target_orientation).acos();
-        debug_string!("Rot angle: {}, airspeed: {:.2} {:.2} {:.2}", rotation_angle, target_orientation.x(), target_orientation.y(), target_orientation.z());
+        // debug_string!("Rot angle: {}, airspeed: {:.2} {:.2} {:.2}", rotation_angle, target_orientation.x(), target_orientation.y(), target_orientation.z());
         (rotation_axis, rotation_angle)
     }
     /// Computes the angular acceleration required to achieve targeted angular velocity
@@ -476,9 +484,25 @@ impl OrbiterVessel for Surveyor {
             // Use manually commanded turn rates if not in retro firing mode
             V!(self.pitchrate_target, self.yawrate_target, self.rollrate_target)
         };
+        let altitude = self.get_altitude(context);
         // Get current main thruster level (assume zero for now)
         let reference_thrust  = if self.vehicle_state == SurveyorState::AfterRetro {
-            self.last_thrust_level = (self.last_thrust_level + self.thrust_controller(context)).clamp(0.0, 1.0);
+            let delta_thrust = if altitude >= 10000.
+            {
+                self.const_acc_controller(context)
+            }else if altitude >= 100. {
+                // Approximate dsescent contour (400 ft/s @ 15000 ft -> 100 ft/s @ 
+                // Target 30 m/s at 100m altitude
+                self.const_velocity_controller(context, 30.)
+            }else if altitude >= 4.{
+                // Constant velocity
+                self.const_velocity_controller(context, 1.5)
+            }else{
+                0.
+            };
+            // debug_string!("Extra thrust: {:.2}", delta_thrust);
+            // Clamp to 0.95 to have some control margin
+            self.last_thrust_level = (self.last_thrust_level + delta_thrust).clamp(0.0, 0.95);
             self.last_thrust_level
         }else {
             0.0
@@ -506,7 +530,7 @@ impl OrbiterVessel for Surveyor {
             context.SetThrusterLevel(self.th_retro, 1.0);
         }
         
-        debug_string!("Vehicle acc: {:.2} Lunar G's, Altitude: {:.2} km, Speed: {:.2} km/s", self.get_vehicle_acceleration(context)/LUNAR_GRAVITY, self.get_altitude(context)/1000., self.get_surface_approach_vel(context)/1000.);
+        // debug_string!("Vehicle acc: {:.2} Lunar G's, Altitude: {:.2} km, Speed: {:.2} km/s", self.get_vehicle_acceleration(context)/LUNAR_GRAVITY, self.get_altitude(context)/1000., self.get_surface_approach_vel(context)/1000.);
     }
     fn consume_buffered_key(
         &mut self,
