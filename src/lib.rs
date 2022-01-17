@@ -300,8 +300,34 @@ impl Surveyor {
         );
     }
     /// Converts angular acceleration vector into thrust components for vernier thrusters
-    fn compute_thrust_from_ang_acc(&mut self, context: &VesselContext, angular_acc: &Vector3)
+    #[allow(non_snake_case)]
+    fn compute_thrust_from_ang_acc(&mut self, context: &VesselContext, angular_acc: &Vector3) -> (Vector3, f64)
     {
+        // Fix thruster 1 at 5%
+        let F_1 = 0.05;
+
+        // Moments of inertia
+        let [I_x, I_y, I_z] = SURVEYOR_PMI.0;
+
+        // Thruster positions
+        let [_, y1, z1] = THRUSTER1_POS.0;
+        let [x2, y2, _] = THRUSTER2_POS.0;
+        let [x3, _, _] = THRUSTER3_POS.0;
+
+        let a_roll = angular_acc.z();
+        let a_pitch = angular_acc.x();
+        let a_yaw = angular_acc.y();
+
+        let theta_1 = (I_z * a_roll / (F_1 * y1)).asin();
+        let (sin_th1, cos_th1) = (theta_1.sin(), theta_1.cos());
+
+        let rhs_1 = I_x * a_pitch + I_y * a_yaw - F_1 * (y1*cos_th1 + z1*sin_th1);
+        let rhs_2 = I_x * a_pitch - I_y * a_yaw + F_1 * (z1*sin_th1 - y1*cos_th1);
+
+        let F_3 = ((y2-x2)*rhs_1 - (y2 + x3)*rhs_2)/(2.0*x3*y2 - 2.0*x3*x2);
+        let F_2 = I_y*a_yaw - F_1*sin_th1*z1 - F_3*x3;
+
+        (V!(F_1, F_2, F_3), theta_1)
     }
     /// Uses a proportional gain to convert a given rotation (in angle+axis form) to
     /// an angular velocity vector
