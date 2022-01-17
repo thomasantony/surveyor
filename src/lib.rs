@@ -425,6 +425,19 @@ impl Surveyor {
         context.GetThrustVector(&mut thrust_vec);
         thrust_vec.length() / self.calc_vehicle_mass(context)
     }
+
+    fn get_altitude(&mut self, context: &VesselContext) -> f64 {
+        context.GetAltitude() - context.GetSurfaceElevation()
+    }
+    /// Used in terminal phase after ~10000 ft or ~3km
+    fn get_surface_approach_vel(&mut self, context: &VesselContext) -> f64 {
+        let href = context.GetSurfaceRef();
+
+        let mut rel_vel = Vector3::default();
+        context.GetRelativeVel(href, &mut rel_vel);
+
+        rel_vel.length()
+    }
 }
 impl OrbiterVessel for Surveyor {
     fn set_class_caps(&mut self, context: &VesselContext, _cfg: FileHandle) {
@@ -493,7 +506,7 @@ impl OrbiterVessel for Surveyor {
             context.SetThrusterLevel(self.th_retro, 1.0);
         }
         
-        debug_string!("Vehicle acceleration: {:.2} Lunar G's, {:.2}", self.get_vehicle_acceleration(context)/LUNAR_GRAVITY, self.last_thrust_level);
+        debug_string!("Vehicle acc: {:.2} Lunar G's, Altitude: {:.2} km, Speed: {:.2} km/s", self.get_vehicle_acceleration(context)/LUNAR_GRAVITY, self.get_altitude(context)/1000., self.get_surface_approach_vel(context)/1000.);
     }
     fn consume_buffered_key(
         &mut self,
