@@ -3,7 +3,7 @@
 /// This is a port of Surveyor.cpp to Rust
 /// 
 use orbiter_rs::{
-    ODebug, oapi_create_vessel, OrbiterVessel, init_vessel, KeyStates, Key, FileHandle, ReferenceFrame,
+    debug_string, oapi_create_vessel, OrbiterVessel, init_vessel, KeyStates, Key, FileHandle, ReferenceFrame,
     PropellantHandle, ThrusterHandle, Vector3, VesselContext, VesselStatus, ThrusterGroupType, V,
 };
 use lazy_static::lazy_static;
@@ -36,7 +36,7 @@ const LEG_RAD: f64 = 1.5;
 const LEG_Z: f64 = -0.6;
 
 
-const GRAVITY_TURN_POINTING_GAIN: f64 = 2.0;
+const GRAVITY_TURN_POINTING_GAIN: f64 = 1.0;
 const PITCH_RATE_GAIN: f64 = 4.0;
 const YAW_RATE_GAIN: f64 = 1.0;
 const ROLL_RATE_GAIN: f64 = 10.0;
@@ -85,6 +85,7 @@ pub struct Surveyor {
     ph_rcs: PropellantHandle,
     vehicle_state: SurveyorState,
 
+    enable_gravity_turn: bool,
     pitchrate_target: f64,
     rollrate_target: f64,
     yawrate_target: f64,
@@ -378,13 +379,14 @@ impl Surveyor {
 
         // We want to rotate the roll axis to point to the opposite of the airspeed vector
         let target_orientation = -airspeed.unit();
-
+       
         // We compute the require rotation in angle-axis form
         // Compute axis perpendicular to initial and final orientation of roll-axis
-        let rotation_axis = roll_axis.cross(&target_orientation);
-
+        let rotation_axis = roll_axis.cross(&target_orientation).unit();
+        
         // We need to use a controller to drive `rotation_angle` to zero
         let rotation_angle = roll_axis.dot(&target_orientation);
+        debug_string!("Rot angle: {}, axis: {:.2} {:.2} {:.2}", rotation_angle, rotation_axis.x(), rotation_axis.y(), rotation_axis.z());
         (rotation_axis, rotation_angle)
     }
     /// Computes the angular acceleration required to achieve targeted angular velocity
@@ -439,15 +441,27 @@ impl OrbiterVessel for Surveyor {
         // let roll = context.GetThrusterGroupLevelByType(ThrusterGroupType::AttBankright)
         //     - context.GetThrusterGroupLevelByType(ThrusterGroupType::AttBankleft);
 
+        let (rotation_axis, rotation_angle) = self.compute_rotation_for_gravity_turn(context);
+        // Point spacecraft for gravity turn
+        let angular_rate_target  = if self.enable_gravity_turn
+        {
+            self.pointing_controller(rotation_axis, rotation_angle)
+        }else {
+            // Use manually commanded turn rates if not in retro firing mode
+            V!(self.pitchrate_target, self.yawrate_target, self.rollrate_target)
+        };
         // Get current main thruster level (assume zero for now)
-        let reference_thrust = 0.0;
+        let reference_thrust  = if self.vehicle_state == SurveyorState::AfterRetro {
+            0.8
+        }else {
+            0.0
+        };
         
-        let angular_rate_target = V!(self.pitchrate_target, self.yawrate_target, self.rollrate_target);
         let angular_acc = self.angular_rate_controller(context, &angular_rate_target);
         
         let vehicle_mass = self.calc_vehicle_mass(context);
         let (F_1, F_2, F_3, th1) = self.compute_thrust_from_ang_acc(vehicle_mass, reference_thrust, & angular_acc);
-        // ODebug(&format!("Thrusters: {:.2}, {:.2}, {:.2}, {:.2} deg",  F_1, F_2, F_3, th1.to_degrees()));
+        // ODebug(format!("Thrusters: {:.2}, {:.2}, {:.2}, {:.2} deg",  F_1, F_2, F_3, th1.to_degrees()));
         self.apply_thrusters(context, F_1, F_2, F_3, th1);
         // // Differential thrusting for attitude control
         // context.SetThrusterDir(
@@ -483,8 +497,8 @@ impl OrbiterVessel for Surveyor {
         let pitch_rate = ang_vel.x();
         let yaw_rate = ang_vel.y();
         let roll_rate = ang_vel.z();
-        ODebug(&format!("Rates: Pitch: {:.2}/{:.2}, Yaw: {:.2}/{:.2}, Roll: {:.2}/{:.2}, {:.2} {:.2} {:.2}", pitch_rate, self.pitchrate_target, 
-                        yaw_rate, self.yawrate_target, roll_rate, self.rollrate_target, F_1, F_2, F_3));
+        // debug_string!("Rates: Pitch: {:.2}/{:.2}, Yaw: {:.2}/{:.2}, Roll: {:.2}/{:.2}, {:.2} {:.2} {:.2}", pitch_rate, self.pitchrate_target, 
+        //                 yaw_rate, self.yawrate_target, roll_rate, self.rollrate_target, F_1, F_2, F_3));
     }
     fn consume_buffered_key(
         &mut self,
@@ -522,6 +536,9 @@ impl OrbiterVessel for Surveyor {
                 1
             }else if key == Key::E {
                 self.yawrate_target -= 5f64.to_radians();
+                1
+            }else if key == Key::G {
+                self.enable_gravity_turn = true;
                 1
             }else if key == Key::Z {
                 self.pitchrate_target = 0.;
