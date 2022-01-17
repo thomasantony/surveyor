@@ -257,7 +257,7 @@ impl Surveyor {
     }
     fn calc_vehicle_mass(&self, context: &VesselContext) -> f64 {
         let mass = self.calc_empty_mass(context);
-        return mass + context.GetPropellantMass(self.ph_retro) + context.GetPropellantMass(self.ph_vernier) + context.GetPropellantMass(self.ph_rcs);
+        return mass + context.GetTotalPropellantMass();
     }
     fn spawn_object(&self, context: &VesselContext, classname: &str, ext: &str, offset: &Vector3) {
         let mut vs = VesselStatus::default();
@@ -405,6 +405,13 @@ impl Surveyor {
             roll_rate_err * ROLL_RATE_GAIN
         )
     }
+    /// Proxy for an accelerometer
+    /// Returns vehicle acceleration in m/s^2
+    fn get_vehicle_acceleration(&mut self, context: &VesselContext) -> f64 {
+        let mut thrust_vec = Vector3::default();
+        context.GetThrustVector(&mut thrust_vec);
+        thrust_vec.length() / self.calc_vehicle_mass(context)
+    }
 }
 impl OrbiterVessel for Surveyor {
     fn set_class_caps(&mut self, context: &VesselContext, _cfg: FileHandle) {
@@ -434,13 +441,6 @@ impl OrbiterVessel for Surveyor {
     fn on_pre_step(&mut self, context: &VesselContext, _sim_t: f64, _sim_dt: f64, _mjd: f64) {
         context.SetEmptyMass(self.calc_empty_mass(context));
 
-        // let pitch = context.GetThrusterGroupLevelByType(ThrusterGroupType::AttPitchup)
-        //     - context.GetThrusterGroupLevelByType(ThrusterGroupType::AttPitchdown);
-        // let yaw = context.GetThrusterGroupLevelByType(ThrusterGroupType::AttYawright)
-        //     - context.GetThrusterGroupLevelByType(ThrusterGroupType::AttYawleft);
-        // let roll = context.GetThrusterGroupLevelByType(ThrusterGroupType::AttBankright)
-        //     - context.GetThrusterGroupLevelByType(ThrusterGroupType::AttBankleft);
-
         let (rotation_axis, rotation_angle) = self.compute_rotation_for_gravity_turn(context);
         // Point spacecraft for gravity turn
         let angular_rate_target  = if self.enable_gravity_turn
@@ -463,20 +463,7 @@ impl OrbiterVessel for Surveyor {
         let (F_1, F_2, F_3, th1) = self.compute_thrust_from_ang_acc(vehicle_mass, reference_thrust, & angular_acc);
         // ODebug(format!("Thrusters: {:.2}, {:.2}, {:.2}, {:.2} deg",  F_1, F_2, F_3, th1.to_degrees()));
         self.apply_thrusters(context, F_1, F_2, F_3, th1);
-        // // Differential thrusting for attitude control
-        // context.SetThrusterDir(
-        //     self.th_vernier[0],
-        //     &V!(5.0f64.to_radians().sin() * roll, 0.0, 1.0),
-        // ); // Roll using the 5 degree offset
-        // context.SetThrusterDir(
-        //     self.th_vernier[1],
-        //     &V!(0.0, 0.0, 1.0 + 0.05 * (pitch - yaw)),
-        // );
-        // context.SetThrusterDir(
-        //     self.th_vernier[2],
-        //     &V!(0.0, 0.0, 1.0 + 0.05 * (pitch + yaw)),
-        // );
-
+        
         if self.vehicle_state == SurveyorState::RetroFiring
             && context.GetPropellantMass(self.ph_retro) < 1.0
         {
@@ -491,14 +478,8 @@ impl OrbiterVessel for Surveyor {
             //Relight the retro if needed
             context.SetThrusterLevel(self.th_retro, 1.0);
         }
-
-        let mut ang_vel = Vector3::default();
-        context.GetAngularVel(&mut ang_vel);
-        let pitch_rate = ang_vel.x();
-        let yaw_rate = ang_vel.y();
-        let roll_rate = ang_vel.z();
-        // debug_string!("Rates: Pitch: {:.2}/{:.2}, Yaw: {:.2}/{:.2}, Roll: {:.2}/{:.2}, {:.2} {:.2} {:.2}", pitch_rate, self.pitchrate_target, 
-        //                 yaw_rate, self.yawrate_target, roll_rate, self.rollrate_target, F_1, F_2, F_3));
+        
+        debug_string!("Vehicle acceleration: {}", self.get_vehicle_acceleration(context));
     }
     fn consume_buffered_key(
         &mut self,
