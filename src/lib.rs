@@ -23,7 +23,7 @@ const RCS_SPACE: f64 = 0.1;
 
 const RETRO_PROP_MASS: f64 = 560.64;
 const RETRO_THRUST: f64 = 39140.0;
-const RETRO_BURNTIME: f64 = 40.5;
+const RETRO_BURNTIME: f64 = 0.1;
 const RETRO_ITOT: f64 = RETRO_THRUST * RETRO_BURNTIME;
 const RETRO_ISP: f64 = RETRO_ITOT / RETRO_PROP_MASS;
 const RETRO_Z: f64 = -0.75;
@@ -554,7 +554,8 @@ impl OrbiterVessel for Surveyor {
         if self.vehicle_state == SurveyorState::BeforeRetroIgnition
         {
             self.attitude_mode = AttitudeMode::GravityTurn;
-            if altitude < 46.0 * MI_IN_M
+            // if altitude < 46.0 * MI_IN_M
+            if altitude < 110000.
             {
                 debug_string!("Firing retro. altitude = {:.2} mi", altitude / MI_IN_M);
                 // Store the current z-axis orientation in global coordinates
@@ -581,7 +582,8 @@ impl OrbiterVessel for Surveyor {
         // debug_string!("Altitude: {:.2} m", altitude);
         // Get current main thruster level
         let reference_thrust  = if self.vehicle_state == SurveyorState::AfterRetro && altitude > 14.0 * FT_IN_M {
-            let delta_thrust = if altitude >= 40000. * FT_IN_M
+            // let delta_thrust = if altitude >= 40000. * FT_IN_M
+            let delta_thrust = if altitude >= 109500.
             {
                 debug_string!("Constant Acceleration Mode, Altitude: {:.2} ft", altitude/FT_IN_M);
                 self.const_acc_controller(context, 0.9 * LUNAR_GRAVITY)
