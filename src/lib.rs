@@ -44,8 +44,13 @@ const THRUST_CONTROL_GAIN: f64 = 0.01;
 const CONST_VEL_THRUST_GAIN: f64 = 0.1;
 const LUNAR_GRAVITY: f64 = 1.625; // m/s^2
 
+// Unit conversions
 const FT_IN_M: f64 = 0.3048;
 const MI_IN_M: f64 = 1609.34;
+
+// Significant altitudes
+const RETRO_IGNITION_ALTITUDE: f64 = 48.0 * MI_IN_M;
+
 
 lazy_static! {
     static ref SURVEYOR_PMI: Vector3 = V!(0.50, 0.50, 0.50);
@@ -386,7 +391,7 @@ impl Surveyor {
         }else if altitude > 5000.0 * FT_IN_M {
             (100.0 * FT_IN_M, 31.67, 3000. * FT_IN_M)
         }else{
-            (20.0 * FT_IN_M, 31.15, 60. * FT_IN_M)
+            (5.0 * FT_IN_M, (3000. - 5.)/(100. - 5.), 60. * FT_IN_M)
         };
         // Make sure the velocity is negative to match sign convention
         - (v0 + (altitude - h_offset)/dhdv)
@@ -534,7 +539,7 @@ impl OrbiterVessel for Surveyor {
         if self.vehicle_state == SurveyorState::BeforeRetroIgnition
         {
             self.attitude_mode = AttitudeMode::GravityTurn;
-            if altitude < 50.0 * MI_IN_M
+            if altitude < RETRO_IGNITION_ALTITUDE
             {
                 debug_string!("Firing retro. altitude = {:.2} mi", altitude / MI_IN_M);
                 // Store the current z-axis orientation in global coordinates
@@ -557,10 +562,11 @@ impl OrbiterVessel for Surveyor {
                 context.Local2Global(&V!(0., 0., 1.), &mut target_orientation_global);
                 self.attitude_mode = AttitudeMode::InertialLock(target_orientation_global);
             }
+        }else if self.vehicle_state == SurveyorState::RetroFiring
+        {
+            debug_string!("Altitude: {:.2} ft", altitude/FT_IN_M);
         }
 
-        let altitude = self.get_altitude(context);
-        debug_string!("Altitude: {:.2} ft", altitude/FT_IN_M);
         // Get current main thruster level
         let reference_thrust  = if self.vehicle_state == SurveyorState::AfterRetro && altitude > 14.0 * FT_IN_M {
             let delta_thrust = if altitude >= 40000. * FT_IN_M
@@ -593,16 +599,22 @@ impl OrbiterVessel for Surveyor {
                 debug_string!("Terminal Descent, Altitude: {:.2} ft, Current vel: {:.2} ft/s", altitude/FT_IN_M, self.get_surface_approach_vel(context)/FT_IN_M);
                 delta_th
             }else{
-                debug_string!("Freefall");
+                if context.GroundContact()
+                {
+                    debug_string!("Touchdown!");
+                }else{
+                    debug_string!("Freefall");
+                }
+
                 0.
             };
-            let ref_thrust_force = self.calc_vehicle_mass(context) * LUNAR_GRAVITY;
-            let ref_thrust_level = ref_thrust_force / (3. * VERNIER_THRUST);
+            // let ref_thrust_force = self.calc_vehicle_mass(context) * LUNAR_GRAVITY;
+            // let ref_thrust_level = ref_thrust_force / (3. * VERNIER_THRUST);
 
             // Clamp to 0.95 to have some control margin
-            (ref_thrust_level + delta_thrust).clamp(0.0, 0.95)
-            // self.last_thrust_level = (ref_thrust_level + delta_thrust).clamp(0.0, 0.95);
-            // self.last_thrust_level
+            // (ref_thrust_level + delta_thrust).clamp(0.0, 0.95)
+            self.last_thrust_level = (self.last_thrust_level + delta_thrust).clamp(0.0, 0.95);
+            self.last_thrust_level
         }else {
             // debug_string!("Thrusters off");
             0.0
@@ -614,13 +626,8 @@ impl OrbiterVessel for Surveyor {
         
         let vehicle_mass = self.calc_vehicle_mass(context);
 
-        // let min_thrust_level = if self.vehicle_state == SurveyorState::TerminalDescent {
-        //     0.05
-        // }else{
-        //     0.05
-        // };
         let (F_1, F_2, F_3, th1) = self.compute_thrust_from_ang_acc(vehicle_mass, reference_thrust, & angular_acc, 0.05);
-        if altitude > 4.0 && !context.GroundContact()
+        if altitude > 5. * FT_IN_M && !context.GroundContact()
         {
             self.apply_thrusters(context, F_1, F_2, F_3, th1);
         }else {
