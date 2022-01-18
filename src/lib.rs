@@ -534,7 +534,7 @@ impl OrbiterVessel for Surveyor {
         if self.vehicle_state == SurveyorState::BeforeRetroIgnition
         {
             self.attitude_mode = AttitudeMode::GravityTurn;
-            if altitude < 46.0 * MI_IN_M
+            if altitude < 50.0 * MI_IN_M
             {
                 debug_string!("Firing retro. altitude = {:.2} mi", altitude / MI_IN_M);
                 // Store the current z-axis orientation in global coordinates
@@ -586,7 +586,7 @@ impl OrbiterVessel for Surveyor {
             self.last_thrust_level
         }else if self.vehicle_state == SurveyorState::TerminalDescent
         {
-            let delta_thrust = if altitude >= 14. * FT_IN_M
+            let delta_thrust = if altitude >= 10. * FT_IN_M
             {
                 // Constant velocity
                 let delta_th = self.const_velocity_controller(context, -1.5);
