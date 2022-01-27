@@ -1,4 +1,4 @@
-# surveyor addon for Orbiter
+# Surveyor spacecraft addon for Orbiter
 
 
 An [Orbiter](http://orbit.medphys.ucl.ac.uk/) addon that demonstrates the Surveyor lunar probe with a functioning landing autopilot
