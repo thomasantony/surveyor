@@ -7,5 +7,5 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-orbiter-rs = {version = "0.1.0", path = "../orbiter-rs"}
+orbiter-rs = {version = "0.2.0"}
 lazy_static = "1.4.0"
