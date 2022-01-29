@@ -50,6 +50,7 @@ const MI_IN_M: f64 = 1609.34;
 
 // Significant altitudes
 const RETRO_IGNITION_ALTITUDE: f64 = 48.0 * MI_IN_M;
+const DESCENT_CONTOUR_ALTITUDE: f64 = 40000.0 * FT_IN_M;
 const ENGINE_CUTOFF_ALTITUDE: f64 = 14.0 * FT_IN_M;
 const TERMINAL_DESCENT_ALTITUDE: f64 = 60. * FT_IN_M;
 
@@ -408,6 +409,13 @@ impl Surveyor {
     /// Get the desired velocity to be on the descent contour
     fn get_descent_contour_velocity(&self, altitude: f64) -> f64
     {
+
+
+        let descent_contour = [
+            (12500.0 * FT_IN_M, 400. * FT_IN_M),
+            (5000.0 * FT_IN_M, 100. * FT_IN_M),
+            (5.0 * FT_IN_M, 60. * FT_IN_M)
+        ];
         let (v0, dhdv, h_offset) = if altitude > 12500.0 * FT_IN_M
         {
             (400.0 * FT_IN_M, 90., 12500. * FT_IN_M)
@@ -562,7 +570,7 @@ impl OrbiterVessel for Surveyor {
             return;
         }
 
-        // Compute vehicle state
+        // Compute vehicle and attitude control state
         if self.descent_phase == DescentPhase::BeforeRetroIgnition
         {
             self.attitude_mode = AttitudeMode::GravityTurn;
@@ -577,7 +585,6 @@ impl OrbiterVessel for Surveyor {
             }
         }else if self.descent_phase == DescentPhase::AfterRetro {
             self.attitude_mode = AttitudeMode::GravityTurn;
-            // self.descent_phase = DescentPhase::TerminalDescent;
             if altitude < ENGINE_CUTOFF_ALTITUDE
             {
                 self.attitude_mode = AttitudeMode::Off;
@@ -586,7 +593,7 @@ impl OrbiterVessel for Surveyor {
             {
                 // Store the current z-axis orientation in global coordinates
                 let mut target_orientation_global = Vector3::default();
-                self.ctx.Local2Global(&V!(0., 0., 1.), &mut target_orientation_global);
+                self.ctx.Local2Global(&DIR_Z_PLUS, &mut target_orientation_global);
                 self.attitude_mode = AttitudeMode::InertialLock(target_orientation_global);
             }
         }else if self.descent_phase == DescentPhase::RetroFiring
@@ -595,17 +602,16 @@ impl OrbiterVessel for Surveyor {
         }
 
         // Get current main thruster level
-        let reference_thrust  = if self.descent_phase == DescentPhase::AfterRetro && altitude > 14.0 * FT_IN_M {
-            let delta_thrust = if altitude >= 40000. * FT_IN_M
-            // let delta_thrust = if altitude >= 109500.
+        let reference_thrust  = if self.descent_phase == DescentPhase::AfterRetro && altitude > ENGINE_CUTOFF_ALTITUDE {
+            let delta_thrust = if altitude >= DESCENT_CONTOUR_ALTITUDE
             {
                 debug_string!("Constant Acceleration Mode, Altitude: {:.2} ft", altitude/FT_IN_M);
                 self.const_acc_controller(0.9 * LUNAR_GRAVITY)
-            }else if altitude > 55. * FT_IN_M {
+            }else if altitude > TERMINAL_DESCENT_ALTITUDE - 5.0 {
                 // Approximate dsescent contour
                 let target_vel = self.get_descent_contour_velocity(altitude);
                 debug_string!("Descent Contour, Altitude: {:.2} ft, Target vel: {:.2} ft/s, Current vel: {:.2} ft/s", altitude/FT_IN_M, target_vel/FT_IN_M, self.get_surface_approach_vel()/FT_IN_M);
-                if altitude < 60. * FT_IN_M 
+                if altitude < TERMINAL_DESCENT_ALTITUDE
                 {
                     self.descent_phase = DescentPhase::TerminalDescent;
                 }
@@ -619,20 +625,20 @@ impl OrbiterVessel for Surveyor {
             self.last_thrust_level
         }else if self.descent_phase == DescentPhase::TerminalDescent
         {
-            let delta_thrust = if altitude >= 10. * FT_IN_M
+            let delta_thrust = if altitude >= ENGINE_CUTOFF_ALTITUDE
             {
                 // Constant velocity
                 let delta_th = self.const_velocity_controller(-1.5);
                 debug_string!("Terminal Descent, Altitude: {:.2} ft, Current vel: {:.2} ft/s", altitude/FT_IN_M, self.get_surface_approach_vel()/FT_IN_M);
                 delta_th
             }else{
+                // Turn off engines
                 if self.ctx.GroundContact()
                 {
                     debug_string!("Touchdown!");
                 }else{
                     debug_string!("Freefall");
                 }
-
                 0.
             };
             // let ref_thrust_force = self.calc_vehicle_mass() * LUNAR_GRAVITY;
@@ -643,7 +649,6 @@ impl OrbiterVessel for Surveyor {
             self.last_thrust_level = (self.last_thrust_level + delta_thrust).clamp(0.0, 0.95);
             self.last_thrust_level
         }else {
-            // debug_string!("Thrusters off");
             0.0
         };
        
@@ -653,6 +658,7 @@ impl OrbiterVessel for Surveyor {
         
         let vehicle_mass = self.calc_vehicle_mass();
 
+        // Compute thrust values required to satisfy acceleration and attitude-control targets
         let (F_1, F_2, F_3, th1) = self.compute_thrust_from_ang_acc(vehicle_mass, reference_thrust, & angular_acc, 0.05);
         if altitude > 5. * FT_IN_M && !self.ctx.GroundContact()
         {
@@ -661,18 +667,19 @@ impl OrbiterVessel for Surveyor {
             self.apply_thrusters(0., 0., 0., 0.);
         }
         
+        // Stage jettison logic
         if self.descent_phase == DescentPhase::RetroFiring
             && self.ctx.GetPropellantMass(self.ph_retro) < 1.0
         {
-            //Jettison the spent main retro
+            // Jettison the spent main retro
             self.jettison();
         }
         if self.descent_phase == DescentPhase::BeforeRetroIgnition
             && self.ctx.GetPropellantMass(self.ph_retro) < 0.999 * RETRO_PROP_MASS
         {
-            //Jettison the AMR if the retro has started burning
+            // Jettison the AMR if the retro has started burning
             self.jettison();
-            //Relight the retro if needed
+            // Relight the retro if needed
             self.ctx.SetThrusterLevel(self.th_retro, 1.0);
         }
 
