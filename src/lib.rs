@@ -366,23 +366,35 @@ impl Surveyor {
     /// Get the desired velocity to be on the descent contour
     fn get_descent_contour_velocity(&self, altitude: f64) -> f64
     {
-
-
         let descent_contour = [
+            (DESCENT_CONTOUR_ALTITUDE, 705. * FT_IN_M),
             (12500.0 * FT_IN_M, 400. * FT_IN_M),
             (5000.0 * FT_IN_M, 100. * FT_IN_M),
-            (5.0 * FT_IN_M, 60. * FT_IN_M)
+            (TERMINAL_DESCENT_ALTITUDE, 5. * FT_IN_M)
         ];
-        let (v0, dhdv, h_offset) = if altitude > 12500.0 * FT_IN_M
+
+        let mut index = 0;
+        for i in 0..descent_contour.len()
         {
-            (400.0 * FT_IN_M, 90., 12500. * FT_IN_M)
-        }else if altitude > 5000.0 * FT_IN_M {
-            (100.0 * FT_IN_M, 31.67, 3000. * FT_IN_M)
+            // Find the "band" of the descent contour that we are currently in
+            if altitude > descent_contour[i].0
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if index == 0
+        {
+            -descent_contour[0].1
         }else{
-            (5.0 * FT_IN_M, (3000. - 5.)/(100. - 5.), 60. * FT_IN_M)
-        };
-        // Make sure the velocity is negative to match sign convention
-        - (v0 + (altitude - h_offset)/dhdv)
+            let (h0, v0) = descent_contour[index-1];
+            let (h1, v1) = descent_contour[index];
+
+            let dhdv = (h0-h1)/(v0-v1);
+            // Make sure the velocity is negative to match sign convention
+            -(v1 + (altitude - h1)/dhdv)
+        }
     }
     /// Computes requires thrust level to maintain a constant acceleration
     fn const_acc_controller(&self, target_acc: f64) -> f64
