@@ -50,7 +50,8 @@ const MI_IN_M: f64 = 1609.34;
 
 // Significant altitudes
 const RETRO_IGNITION_ALTITUDE: f64 = 48.0 * MI_IN_M;
-
+const ENGINE_CUTOFF_ALTITUDE: f64 = 14.0 * FT_IN_M;
+const TERMINAL_DESCENT_ALTITUDE: f64 = 60. * FT_IN_M;
 
 lazy_static! {
     static ref SURVEYOR_PMI: Vector3 = V!(0.50, 0.50, 0.50);
@@ -577,11 +578,11 @@ impl OrbiterVessel for Surveyor {
         }else if self.descent_phase == DescentPhase::AfterRetro {
             self.attitude_mode = AttitudeMode::GravityTurn;
             // self.descent_phase = DescentPhase::TerminalDescent;
-            if altitude < 14.0 * FT_IN_M
+            if altitude < ENGINE_CUTOFF_ALTITUDE
             {
                 self.attitude_mode = AttitudeMode::Off;
             }
-            else if altitude < 60. * FT_IN_M
+            else if altitude < TERMINAL_DESCENT_ALTITUDE
             {
                 // Store the current z-axis orientation in global coordinates
                 let mut target_orientation_global = Vector3::default();
