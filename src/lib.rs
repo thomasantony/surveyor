@@ -4,7 +4,7 @@
 /// 
 use orbiter_rs::{
     debug_string, oapi_create_vessel, OrbiterVessel, init_vessel, KeyStates, Key, FileHandle, ReferenceFrame,
-    PropellantHandle, ThrusterHandle, Vector3, VesselContext, VesselStatus, ThrusterGroupType, V,
+    PropellantHandle, ThrusterHandle, Vector3, SDKVessel, VesselStatus, ThrusterGroupType, V,
 };
 use lazy_static::lazy_static;
 
@@ -98,7 +98,7 @@ impl Default for AttitudeMode {
         Self::Off
     }
 }
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Surveyor {
     th_vernier: Vec<ThrusterHandle>,
     th_rcs: Vec<ThrusterHandle>,
@@ -115,10 +115,32 @@ pub struct Surveyor {
 
     // Used for inertial attitude hold
     last_thrust_level: f64,
+
+    /// Bridge to C++ Orbiter SDK
+    ctx: SDKVessel,
 }
 impl Surveyor {
-    fn setup_meshes(&mut self, context: &VesselContext) {
-        context.ClearMeshes();
+    pub fn new(vessel: SDKVessel) -> Self {
+        Self {
+            th_vernier: Vec::new(),
+            th_rcs: Vec::new(),
+            th_retro: ThrusterHandle::default(),
+            ph_vernier: PropellantHandle::default(),
+            ph_retro: PropellantHandle::default(),
+            ph_rcs: PropellantHandle::default(),
+            vehicle_state: SurveyorState::default(),
+
+            attitude_mode: AttitudeMode::Off,
+            pitchrate_target: 0.,
+            rollrate_target: 0.,
+            yawrate_target: 0.,
+
+            last_thrust_level: 0.,
+            ctx: vessel
+        }
+    }
+    fn setup_meshes(&self) {
+        self.ctx.ClearMeshes();
         let mut meshes = Vec::new();
         meshes.push(("Surveyor-AMR", Vector3::new(0., 0., -0.6)));
         meshes.push(("Surveyor-Retro", Vector3::new(0., 0., -0.5)));
@@ -130,51 +152,51 @@ impl Surveyor {
             SurveyorState::AfterRetro | SurveyorState::TerminalDescent => &meshes[2..],
         };
         for (mesh, ofs) in meshes_used {
-            context.AddMeshWithOffset(mesh.to_string(), &ofs);
+            self.ctx.AddMeshWithOffset(mesh.to_string(), &ofs);
         }
     }
-    fn setup_thrusters(&mut self, context: &VesselContext)
+    fn setup_thrusters(&mut self)
     {
         // Create Propellant Resources
-        self.ph_vernier = context.CreatePropellantResource(VERNIER_PROP_MASS);
-        self.ph_rcs = context.CreatePropellantResource(RCS_PROP_MASS);
-        self.ph_retro = context.CreatePropellantResource(RETRO_PROP_MASS);
+        self.ph_vernier = self.ctx.CreatePropellantResource(VERNIER_PROP_MASS);
+        self.ph_rcs = self.ctx.CreatePropellantResource(RCS_PROP_MASS);
+        self.ph_retro = self.ctx.CreatePropellantResource(RETRO_PROP_MASS);
 
-        self.th_vernier.push(context.CreateThruster(
+        self.th_vernier.push(self.ctx.CreateThruster(
             &THRUSTER1_POS,
             &DIR_Z_PLUS,
             VERNIER_THRUST,
             self.ph_vernier,
             VERNIER_ISP,
         ));
-        self.th_vernier.push(context.CreateThruster(
+        self.th_vernier.push(self.ctx.CreateThruster(
             &THRUSTER2_POS,
             &DIR_Z_PLUS,
             VERNIER_THRUST,
             self.ph_vernier,
             VERNIER_ISP,
         ));
-        self.th_vernier.push(context.CreateThruster(
+        self.th_vernier.push(self.ctx.CreateThruster(
             &THRUSTER3_POS,
             &DIR_Z_PLUS,
             VERNIER_THRUST,
             self.ph_vernier,
             VERNIER_ISP,
         ));
-        context.CreateThrusterGroup(&self.th_vernier, ThrusterGroupType::Main);
+        self.ctx.CreateThrusterGroup(&self.th_vernier, ThrusterGroupType::Main);
         for th in self.th_vernier.iter() {
-            context.AddExhaust(*th, 1.0, 0.1);
+            self.ctx.AddExhaust(*th, 1.0, 0.1);
         }
 
         // Roll (Leg1) jets
-        self.th_rcs.push(context.CreateThruster(
+        self.th_rcs.push(self.ctx.CreateThruster(
             &V!(-RCS_SPACE, RCS_RAD, RCS_Z),
             & DIR_X_PLUS,
             RCS_THRUST,
             self.ph_rcs,
             RCS_ISP,
         ));
-        self.th_rcs.push(context.CreateThruster(
+        self.th_rcs.push(self.ctx.CreateThruster(
             &V!(RCS_SPACE, RCS_RAD, RCS_Z),
             & DIR_X_MINUS,
             RCS_THRUST,
@@ -183,7 +205,7 @@ impl Surveyor {
         ));
 
         // Leg2 jets
-        self.th_rcs.push(context.CreateThruster(
+        self.th_rcs.push(self.ctx.CreateThruster(
             &V!(
                 (60.0f64).to_radians().sin() * RCS_RAD,
                 -0.5 * RCS_RAD,
@@ -194,7 +216,7 @@ impl Surveyor {
             self.ph_rcs,
             RCS_ISP,
         ));
-        self.th_rcs.push(context.CreateThruster(
+        self.th_rcs.push(self.ctx.CreateThruster(
             &V!(
                 (60.0f64).to_radians().sin() * RCS_RAD,
                 -0.5 * RCS_RAD,
@@ -207,7 +229,7 @@ impl Surveyor {
         ));
 
         // Leg3 jets
-        self.th_rcs.push(context.CreateThruster(
+        self.th_rcs.push(self.ctx.CreateThruster(
             &V!(
                 -(60.0f64).to_radians().sin() * RCS_RAD,
                 -0.5 * RCS_RAD,
@@ -218,7 +240,7 @@ impl Surveyor {
             self.ph_rcs,
             RCS_ISP,
         ));
-        self.th_rcs.push(context.CreateThruster(
+        self.th_rcs.push(self.ctx.CreateThruster(
             &V!(
                 -(60.0f64).to_radians().sin() * RCS_RAD,
                 -0.5 * RCS_RAD,
@@ -235,99 +257,99 @@ impl Surveyor {
 
         // th_group[0] = self.th_rcs[3]; // -Z #1
         // th_group[1] = self.th_rcs[5]; // -Z #2
-        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchdown);
+        // self.ctx.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchdown);
 
         // th_group[0] = self.th_rcs[2]; // +Z #1
         // th_group[1] = self.th_rcs[4]; // +Z #2
-        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchup);
+        // self.ctx.CreateThrusterGroup(&th_group, ThrusterGroupType::AttPitchup);
 
         // th_group[0] = self.th_rcs[0]; // +X
-        // context.CreateThrusterGroup(&th_group[..1], ThrusterGroupType::AttBankright);
+        // self.ctx.CreateThrusterGroup(&th_group[..1], ThrusterGroupType::AttBankright);
 
         // th_group[0] = self.th_rcs[1]; // -X
-        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttBankleft);
+        // self.ctx.CreateThrusterGroup(&th_group, ThrusterGroupType::AttBankleft);
 
         // th_group[0] = self.th_rcs[3]; // -Z #1
         // th_group[1] = self.th_rcs[4]; // +Z #2
-        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawright);
+        // self.ctx.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawright);
 
         // th_group[0] = self.th_rcs[2]; // +Z #1
         // th_group[1] = self.th_rcs[5]; // -Z #2
-        // context.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawleft);
+        // self.ctx.CreateThrusterGroup(&th_group, ThrusterGroupType::AttYawleft);
 
         for th in self.th_rcs.iter() {
-            context.AddExhaust(*th, 0.1, 0.05);
+            self.ctx.AddExhaust(*th, 0.1, 0.05);
         }
 
-        self.th_retro = context.CreateThruster(
+        self.th_retro = self.ctx.CreateThruster(
             &V!(0.0, 0.0, RETRO_Z),
             & DIR_Z_PLUS,
             RETRO_THRUST,
             self.ph_retro,
             RETRO_ISP,
         );
-        context.AddExhaust(self.th_retro, 2.0, 0.3);
+        self.ctx.AddExhaust(self.th_retro, 2.0, 0.3);
     }
-    fn calc_empty_mass(&self, context: &VesselContext) -> f64 {
+    fn calc_empty_mass(&self) -> f64 {
         let mut empty_mass = 0.0;
         // Jettison AMR when retro starts firing
-        if context.GetPropellantMass(self.ph_retro) > 0.999 * RETRO_PROP_MASS {
+        if self.ctx.GetPropellantMass(self.ph_retro) > 0.999 * RETRO_PROP_MASS {
             empty_mass += AMR_MASS;
         }
         // Add in retro mass while there is still retro fuel left
-        if context.GetPropellantMass(self.ph_retro) > 1. {
+        if self.ctx.GetPropellantMass(self.ph_retro) > 1. {
             empty_mass += RETRO_EMPTY_MASS;
         }
         empty_mass += LANDER_EMPTY_MASS;
         return empty_mass;
     }
-    fn calc_vehicle_mass(&self, context: &VesselContext) -> f64 {
-        let mass = self.calc_empty_mass(context);
-        return mass + context.GetTotalPropellantMass();
+    fn calc_vehicle_mass(&self) -> f64 {
+        let mass = self.calc_empty_mass();
+        return mass + self.ctx.GetTotalPropellantMass();
     }
-    fn spawn_object(&self, context: &VesselContext, classname: &str, ext: &str, offset: &Vector3) {
+    fn spawn_object(&self, classname: &str, ext: &str, offset: &Vector3) {
         let mut vs = VesselStatus::default();
 
-        context.GetStatus(&mut vs);
-        context.Local2Rel(offset, &mut vs.rpos);
+        self.ctx.GetStatus(&mut vs);
+        self.ctx.Local2Rel(offset, &mut vs.rpos);
 
         vs.eng_main = 0.0;
         vs.eng_hovr = 0.0;
         vs.status = 0;
-        let new_object_name = format!("{}{}", context.GetName(), ext);
+        let new_object_name = format!("{}{}", self.ctx.GetName(), ext);
 
         oapi_create_vessel(new_object_name, classname.to_owned(), &vs);
     }
-    fn jettison(&mut self, context: &VesselContext) {
+    fn jettison(&mut self) {
         use SurveyorState::*;
         match self.vehicle_state {
             BeforeRetroIgnition => {
                 self.vehicle_state = RetroFiring;
-                self.spawn_object(context, "Surveyor_AMR", "-AMR", &V!(0., 0., -0.6));
+                self.spawn_object("Surveyor_AMR", "-AMR", &V!(0., 0., -0.6));
             }
             RetroFiring => {
                 self.vehicle_state = AfterRetro;
-                self.spawn_object(context, "Surveyor_Retro", "-Retro", &V!(0., 0., -0.5));
+                self.spawn_object("Surveyor_Retro", "-Retro", &V!(0., 0., -0.5));
             }
             _ => {}
         }
-        self.setup_meshes(context);
+        self.setup_meshes();
     }
-    fn apply_thrusters(&mut self, context: &VesselContext, f_1: f64, f_2: f64, f_3: f64, theta_1: f64)
+    fn apply_thrusters(&self, f_1: f64, f_2: f64, f_3: f64, theta_1: f64)
     {
         let f_1 = f_1.clamp(0.0, 1.0);
         let f_2 = f_2.clamp(0.0,1.0);
         let f_3 = f_3.clamp(0.0, 1.0);
         let theta_1 = theta_1.clamp(-5f64.to_radians(), 5f64.to_radians());
-        context.SetThrusterLevel(self.th_vernier[0], f_1);
-        context.SetThrusterLevel(self.th_vernier[1], f_2);
-        context.SetThrusterLevel(self.th_vernier[2], f_3);
+        self.ctx.SetThrusterLevel(self.th_vernier[0], f_1);
+        self.ctx.SetThrusterLevel(self.th_vernier[1], f_2);
+        self.ctx.SetThrusterLevel(self.th_vernier[2], f_3);
 
         let t1_sin = theta_1.sin();
         let t1_cos = theta_1.cos();
 
         let thruster1_dir = &V!(t1_sin, 0.0, t1_cos);
-        context.SetThrusterDir(
+        self.ctx.SetThrusterDir(
             self.th_vernier[0],
             thruster1_dir,
         );
@@ -336,7 +358,7 @@ impl Surveyor {
     /// The `reference_thrust` value is used to compute the "known" value for thruster 1
     /// A minimum of 5% thrust is used if the reference is too low.
     #[allow(non_snake_case)]
-    fn compute_thrust_from_ang_acc(&mut self, vehicle_mass:f64, reference_thrust_level: f64, angular_acc: &Vector3, min_thrust_level: f64) -> (f64 ,f64, f64, f64)
+    fn compute_thrust_from_ang_acc(&self, vehicle_mass:f64, reference_thrust_level: f64, angular_acc: &Vector3, min_thrust_level: f64) -> (f64 ,f64, f64, f64)
     {
         if angular_acc.length() < 0.001
         {
@@ -383,7 +405,7 @@ impl Surveyor {
         (F_1, reference_thrust_level+F_2, reference_thrust_level+F_3, theta_1)
     }
     /// Get the desired velocity to be on the descent contour
-    fn get_descent_contour_velocity(&mut self, altitude: f64) -> f64
+    fn get_descent_contour_velocity(&self, altitude: f64) -> f64
     {
         let (v0, dhdv, h_offset) = if altitude > 12500.0 * FT_IN_M
         {
@@ -397,42 +419,42 @@ impl Surveyor {
         - (v0 + (altitude - h_offset)/dhdv)
     }
     /// Computes requires thrust level to maintain a constant acceleration
-    fn const_acc_controller(&mut self, context: &VesselContext, target_acc: f64) -> f64
+    fn const_acc_controller(&self, target_acc: f64) -> f64
     {
-        let current_acc = self.get_vehicle_acceleration(context);
+        let current_acc = self.get_vehicle_acceleration();
 
         let thrust_change = THRUST_CONTROL_GAIN*(target_acc - current_acc);
         thrust_change
     }
     /// Computes requires thrust level to maintain constant velocity
-    fn const_velocity_controller(&mut self, context: &VesselContext, target_vel: f64) -> f64
+    fn const_velocity_controller(&self, target_vel: f64) -> f64
     {
-        let current_vel = self.get_surface_approach_vel(context);
+        let current_vel = self.get_surface_approach_vel();
         let thrust_change = CONST_VEL_THRUST_GAIN*(target_vel - current_vel);
         thrust_change
     }
 
     /// Computes angular velocity to be commanded to achieve desired orientation
-    fn attitude_controller(&mut self, context: &VesselContext) -> Vector3
+    fn attitude_controller(&self) -> Vector3
     {
         match &self.attitude_mode {
             AttitudeMode::Off => { Vector3::default() },
             AttitudeMode::GravityTurn => {
-                let target_orientation = self.compute_target_vector_for_gravity_turn(context);
-                let (rotation_axis, rotation_angle) = self.compute_rotation(context, &target_orientation);
+                let target_orientation = self.compute_target_vector_for_gravity_turn();
+                let (rotation_axis, rotation_angle) = self.compute_rotation(&target_orientation);
                 self.pointing_controller(rotation_axis, rotation_angle)
             },
             AttitudeMode::InertialLock(target_orientation_global) => {
                 let mut target_orientation = Vector3::default();
-                context.Global2Local(&target_orientation_global, &mut target_orientation);
-                let (rotation_axis, rotation_angle) = self.compute_rotation(context, &target_orientation);
+                self.ctx.Global2Local(&target_orientation_global, &mut target_orientation);
+                let (rotation_axis, rotation_angle) = self.compute_rotation(&target_orientation);
                 self.pointing_controller(rotation_axis, rotation_angle)
             }
         }
     }
     /// Uses a proportional gain to convert a given rotation (in angle+axis form) to
     /// an angular velocity vector
-    fn pointing_controller(&mut self, rotation_axis: Vector3, rotation_angle: f64) -> Vector3 
+    fn pointing_controller(&self, rotation_axis: Vector3, rotation_angle: f64) -> Vector3 
     {
         let ang_vel_magnitude = -rotation_angle * GRAVITY_TURN_POINTING_GAIN;
         // Scale the rotation axis vector by the magnitude to get the angular velocity vector
@@ -441,17 +463,17 @@ impl Surveyor {
         target_ang_vel
     }
     /// Computes the target vector for gravity turn
-    fn compute_target_vector_for_gravity_turn(&mut self, context: &VesselContext) -> Vector3
+    fn compute_target_vector_for_gravity_turn(&self) -> Vector3
     {
         let mut airspeed = Vector3::default();
         // Compute velocity vector in vehicle's local frame of reference
-        context.GetAirspeedVector(ReferenceFrame::Local, &mut airspeed);
+        self.ctx.GetAirspeedVector(ReferenceFrame::Local, &mut airspeed);
         // We want to rotate the roll axis to point to the opposite of the airspeed vector
         -airspeed.unit()
     }
     /// Computes the rotation in angle/axis form to point the roll axis towards the
     /// retrograde direction
-    fn compute_rotation(&mut self, context: &VesselContext, target_orientation: &Vector3) -> (Vector3, f64)
+    fn compute_rotation(&self, target_orientation: &Vector3) -> (Vector3, f64)
     {
         // Roll axis is the direction of thrust for vernier thrusters
         let roll_axis = V!(0., 0., 1.);
@@ -472,10 +494,10 @@ impl Surveyor {
     }
     /// Computes the angular acceleration required to achieve targeted angular velocity
     /// Uses a proportional controller
-    fn angular_rate_controller(&mut self, context: &VesselContext, target_ang_vel: &Vector3) -> Vector3
+    fn angular_rate_controller(&self, target_ang_vel: &Vector3) -> Vector3
     {
         let mut current_angular_vel = Vector3::default();
-        context.GetAngularVel(&mut current_angular_vel);
+        self.ctx.GetAngularVel(&mut current_angular_vel);
         let angular_vel_err = target_ang_vel.clone() - current_angular_vel;
         let pitch_rate_err = angular_vel_err.x();
         let yaw_rate_err = angular_vel_err.y();
@@ -488,28 +510,28 @@ impl Surveyor {
     }
     /// Proxy for an accelerometer
     /// Returns vehicle acceleration in m/s^2
-    fn get_vehicle_acceleration(&mut self, context: &VesselContext) -> f64 {
+    fn get_vehicle_acceleration(&self) -> f64 {
         let mut thrust_vec = Vector3::default();
-        context.GetThrustVector(&mut thrust_vec);
-        thrust_vec.length() / self.calc_vehicle_mass(context)
+        self.ctx.GetThrustVector(&mut thrust_vec);
+        thrust_vec.length() / self.calc_vehicle_mass()
     }
 
-    fn get_altitude(&mut self, context: &VesselContext) -> f64 {
-        context.GetAltitude() - context.GetSurfaceElevation()
+    fn get_altitude(&self) -> f64 {
+        self.ctx.GetAltitude() - self.ctx.GetSurfaceElevation()
     }
     /// Used in terminal phase after ~10000 ft or ~3km
-    fn get_surface_approach_vel(&mut self, context: &VesselContext) -> f64 {
+    fn get_surface_approach_vel(&self) -> f64 {
         let mut rel_vel = Vector3::default();
-        context.GetAirspeedVector(ReferenceFrame::Horizon, &mut rel_vel);
+        self.ctx.GetAirspeedVector(ReferenceFrame::Horizon, &mut rel_vel);
 
         rel_vel.y() // Vertical speed
     }
 }
 impl OrbiterVessel for Surveyor {
-    fn set_class_caps(&mut self, context: &VesselContext, _cfg: FileHandle) {
-        context.SetSize(1.0);
-        context.SetPMI(&SURVEYOR_PMI);
-        context.SetTouchdownPoints(
+    fn set_class_caps(&mut self, _cfg: FileHandle) {
+        self.ctx.SetSize(1.0);
+        self.ctx.SetPMI(&SURVEYOR_PMI);
+        self.ctx.SetTouchdownPoints(
             &V!(0.0, LEG_RAD, LEG_Z),
             &V!(
                 (60.0f64).to_radians().sin() * LEG_RAD,
@@ -522,18 +544,22 @@ impl OrbiterVessel for Surveyor {
                 LEG_Z
             ),
         );
-        self.setup_thrusters(context);
-        context.SetEmptyMass(LANDER_EMPTY_MASS);
+        self.setup_thrusters();
+        self.ctx.SetEmptyMass(LANDER_EMPTY_MASS);
 
         // camera parameters
-        context.SetCameraOffset(&V!(0.0, 0.8, 0.0));
-        self.setup_meshes(context)
+        self.ctx.SetCameraOffset(&V!(0.0, 0.8, 0.0));
+        self.setup_meshes()
     }
     #[allow(non_snake_case)]
-    fn on_pre_step(&mut self, context: &VesselContext, _sim_t: f64, _sim_dt: f64, _mjd: f64) {
-        context.SetEmptyMass(self.calc_empty_mass(context));
+    fn on_pre_step(&mut self, _sim_t: f64, _sim_dt: f64, _mjd: f64) {
+        self.ctx.SetEmptyMass(self.calc_empty_mass());
         
-        let altitude = self.get_altitude(context);
+        let altitude = self.get_altitude();
+
+        if altitude < 1.0 {
+            return;
+        }
 
         // Compute vehicle state
         if self.vehicle_state == SurveyorState::BeforeRetroIgnition
@@ -543,7 +569,7 @@ impl OrbiterVessel for Surveyor {
             {
                 debug_string!("Firing retro. altitude = {:.2} mi", altitude / MI_IN_M);
                 // Store the current z-axis orientation in global coordinates
-                context.SetThrusterLevel(self.th_retro, 1.0);
+                self.ctx.SetThrusterLevel(self.th_retro, 1.0);
                 // vehicle_state will be set after AMR is jettisoned 
             }else {
                 debug_string!("Waiting to fire retro ... altitude = {:.2} mi", altitude / MI_IN_M);
@@ -559,7 +585,7 @@ impl OrbiterVessel for Surveyor {
             {
                 // Store the current z-axis orientation in global coordinates
                 let mut target_orientation_global = Vector3::default();
-                context.Local2Global(&V!(0., 0., 1.), &mut target_orientation_global);
+                self.ctx.Local2Global(&V!(0., 0., 1.), &mut target_orientation_global);
                 self.attitude_mode = AttitudeMode::InertialLock(target_orientation_global);
             }
         }else if self.vehicle_state == SurveyorState::RetroFiring
@@ -573,16 +599,16 @@ impl OrbiterVessel for Surveyor {
             // let delta_thrust = if altitude >= 109500.
             {
                 debug_string!("Constant Acceleration Mode, Altitude: {:.2} ft", altitude/FT_IN_M);
-                self.const_acc_controller(context, 0.9 * LUNAR_GRAVITY)
+                self.const_acc_controller(0.9 * LUNAR_GRAVITY)
             }else if altitude > 55. * FT_IN_M {
                 // Approximate dsescent contour
                 let target_vel = self.get_descent_contour_velocity(altitude);
-                debug_string!("Descent Contour, Altitude: {:.2} ft, Target vel: {:.2} ft/s, Current vel: {:.2} ft/s", altitude/FT_IN_M, target_vel/FT_IN_M, self.get_surface_approach_vel(context)/FT_IN_M);
+                debug_string!("Descent Contour, Altitude: {:.2} ft, Target vel: {:.2} ft/s, Current vel: {:.2} ft/s", altitude/FT_IN_M, target_vel/FT_IN_M, self.get_surface_approach_vel()/FT_IN_M);
                 if altitude < 60. * FT_IN_M 
                 {
                     self.vehicle_state = SurveyorState::TerminalDescent;
                 }
-                self.const_velocity_controller(context, target_vel)
+                self.const_velocity_controller(target_vel)
             }else {
                 0.
             };
@@ -595,11 +621,11 @@ impl OrbiterVessel for Surveyor {
             let delta_thrust = if altitude >= 10. * FT_IN_M
             {
                 // Constant velocity
-                let delta_th = self.const_velocity_controller(context, -1.5);
-                debug_string!("Terminal Descent, Altitude: {:.2} ft, Current vel: {:.2} ft/s", altitude/FT_IN_M, self.get_surface_approach_vel(context)/FT_IN_M);
+                let delta_th = self.const_velocity_controller(-1.5);
+                debug_string!("Terminal Descent, Altitude: {:.2} ft, Current vel: {:.2} ft/s", altitude/FT_IN_M, self.get_surface_approach_vel()/FT_IN_M);
                 delta_th
             }else{
-                if context.GroundContact()
+                if self.ctx.GroundContact()
                 {
                     debug_string!("Touchdown!");
                 }else{
@@ -608,7 +634,7 @@ impl OrbiterVessel for Surveyor {
 
                 0.
             };
-            // let ref_thrust_force = self.calc_vehicle_mass(context) * LUNAR_GRAVITY;
+            // let ref_thrust_force = self.calc_vehicle_mass() * LUNAR_GRAVITY;
             // let ref_thrust_level = ref_thrust_force / (3. * VERNIER_THRUST);
 
             // Clamp to 0.95 to have some control margin
@@ -621,38 +647,37 @@ impl OrbiterVessel for Surveyor {
         };
        
         // Point spacecraft for gravity turn (or inertial hold)
-        let angular_rate_target  = self.attitude_controller(context);
-        let angular_acc = self.angular_rate_controller(context, &angular_rate_target);
+        let angular_rate_target  = self.attitude_controller();
+        let angular_acc = self.angular_rate_controller(&angular_rate_target);
         
-        let vehicle_mass = self.calc_vehicle_mass(context);
+        let vehicle_mass = self.calc_vehicle_mass();
 
         let (F_1, F_2, F_3, th1) = self.compute_thrust_from_ang_acc(vehicle_mass, reference_thrust, & angular_acc, 0.05);
-        if altitude > 5. * FT_IN_M && !context.GroundContact()
+        if altitude > 5. * FT_IN_M && !self.ctx.GroundContact()
         {
-            self.apply_thrusters(context, F_1, F_2, F_3, th1);
+            self.apply_thrusters(F_1, F_2, F_3, th1);
         }else {
-            self.apply_thrusters(context, 0., 0., 0., 0.);
+            self.apply_thrusters(0., 0., 0., 0.);
         }
         
         if self.vehicle_state == SurveyorState::RetroFiring
-            && context.GetPropellantMass(self.ph_retro) < 1.0
+            && self.ctx.GetPropellantMass(self.ph_retro) < 1.0
         {
             //Jettison the spent main retro
-            self.jettison(context);
+            self.jettison();
         }
         if self.vehicle_state == SurveyorState::BeforeRetroIgnition
-            && context.GetPropellantMass(self.ph_retro) < 0.999 * RETRO_PROP_MASS
+            && self.ctx.GetPropellantMass(self.ph_retro) < 0.999 * RETRO_PROP_MASS
         {
             //Jettison the AMR if the retro has started burning
-            self.jettison(context);
+            self.jettison();
             //Relight the retro if needed
-            context.SetThrusterLevel(self.th_retro, 1.0);
+            self.ctx.SetThrusterLevel(self.th_retro, 1.0);
         }
 
     }
     fn consume_buffered_key(
         &mut self,
-        context: &VesselContext,
         key: Key,
         down: bool,
         kstate: KeyStates,
@@ -667,7 +692,7 @@ impl OrbiterVessel for Surveyor {
             if key == Key::L
             {
                 // Fire Retro
-                context.SetThrusterLevel(self.th_retro, 1.0);
+                self.ctx.SetThrusterLevel(self.th_retro, 1.0);
                 1
             }else if key == Key::W {
                 self.pitchrate_target -= 5f64.to_radians();
@@ -703,9 +728,9 @@ impl OrbiterVessel for Surveyor {
 }
 
 init_vessel!(
-    fn init(_h_vessel: OBJHANDLE, _flight_model: i32) -> Surveyor 
+    fn init(vessel) 
     {
-        Surveyor::default()
+        Surveyor::new(vessel)
     }
     fn exit() {}
 );
