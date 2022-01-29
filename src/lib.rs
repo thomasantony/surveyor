@@ -450,7 +450,7 @@ impl Surveyor {
         -airspeed.unit()
     }
     /// Computes the rotation in angle/axis form to point the roll axis towards the
-    /// retrograde direction
+    /// desired orientation
     fn compute_rotation(&self, target_orientation: &Vector3) -> (Vector3, f64)
     {
         // Roll axis is the direction of thrust for vernier thrusters
