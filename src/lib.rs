@@ -8,51 +8,8 @@ use orbiter_rs::{
 };
 use lazy_static::lazy_static;
 
-const VERNIER_PROP_MASS: f64 = 70.98;
-const VERNIER_ISP: f64 = 3200.0;
-const VERNIER_THRUST: f64 = 463.0;
-const VERNIER_RAD: f64 = 0.5;
-const VERNIER_Z: f64 = -0.65;
-
-const RCS_PROP_MASS: f64 = 2.0;
-const RCS_ISP: f64 = 630.0;
-const RCS_THRUST: f64 = 0.25;
-const RCS_RAD: f64 = 1.0;
-const RCS_Z: f64 = -0.5;
-const RCS_SPACE: f64 = 0.1;
-
-const RETRO_PROP_MASS: f64 = 560.64;
-const RETRO_THRUST: f64 = 39140.0;
-const RETRO_BURNTIME: f64 = 40.5;
-const RETRO_ITOT: f64 = RETRO_THRUST * RETRO_BURNTIME;
-const RETRO_ISP: f64 = RETRO_ITOT / RETRO_PROP_MASS;
-const RETRO_Z: f64 = -0.75;
-
-const LANDER_EMPTY_MASS: f64 = 289.10; //Basic bus plus payload minus AMR minus retro case
-const RETRO_EMPTY_MASS: f64 = 64.88;
-const AMR_MASS: f64 = 3.82;
-
-const LEG_RAD: f64 = 1.5;
-const LEG_Z: f64 = -0.6;
-
-// Controller gains
-const GRAVITY_TURN_POINTING_GAIN: f64 = 0.3;
-const PITCH_RATE_GAIN: f64 = 4.0;
-const YAW_RATE_GAIN: f64 = 2.0;
-const ROLL_RATE_GAIN: f64 = 10.0;
-const THRUST_CONTROL_GAIN: f64 = 0.01;
-const CONST_VEL_THRUST_GAIN: f64 = 0.1;
-const LUNAR_GRAVITY: f64 = 1.625; // m/s^2
-
-// Unit conversions
-const FT_IN_M: f64 = 0.3048;
-const MI_IN_M: f64 = 1609.34;
-
-// Significant altitudes
-const RETRO_IGNITION_ALTITUDE: f64 = 48.0 * MI_IN_M;
-const DESCENT_CONTOUR_ALTITUDE: f64 = 40000.0 * FT_IN_M;
-const ENGINE_CUTOFF_ALTITUDE: f64 = 14.0 * FT_IN_M;
-const TERMINAL_DESCENT_ALTITUDE: f64 = 60. * FT_IN_M;
+mod constants;
+use constants::*;
 
 lazy_static! {
     static ref SURVEYOR_PMI: Vector3 = V!(0.50, 0.50, 0.50);
