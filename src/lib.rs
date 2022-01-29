@@ -75,13 +75,13 @@ lazy_static! {
 }
 
 #[derive(Debug, PartialEq)]
-enum SurveyorState {
+enum DescentPhase {
     BeforeRetroIgnition,
     RetroFiring,
     AfterRetro,
     TerminalDescent,
 }
-impl Default for SurveyorState {
+impl Default for DescentPhase {
     fn default() -> Self {
         Self::BeforeRetroIgnition
     }
@@ -106,7 +106,7 @@ pub struct Surveyor {
     ph_vernier: PropellantHandle,
     ph_retro: PropellantHandle,
     ph_rcs: PropellantHandle,
-    vehicle_state: SurveyorState,
+    descent_phase: DescentPhase,
 
     attitude_mode: AttitudeMode,
     pitchrate_target: f64,
@@ -128,7 +128,7 @@ impl Surveyor {
             ph_vernier: PropellantHandle::default(),
             ph_retro: PropellantHandle::default(),
             ph_rcs: PropellantHandle::default(),
-            vehicle_state: SurveyorState::default(),
+            descent_phase: DescentPhase::default(),
 
             attitude_mode: AttitudeMode::Off,
             pitchrate_target: 0.,
@@ -146,10 +146,10 @@ impl Surveyor {
         meshes.push(("Surveyor-Retro", Vector3::new(0., 0., -0.5)));
         meshes.push(("Surveyor-Lander", Vector3::new(0., 0.3, 0.)));
 
-        let meshes_used = match self.vehicle_state {
-            SurveyorState::BeforeRetroIgnition => &meshes[0..],
-            SurveyorState::RetroFiring => &meshes[1..],
-            SurveyorState::AfterRetro | SurveyorState::TerminalDescent => &meshes[2..],
+        let meshes_used = match self.descent_phase {
+            DescentPhase::BeforeRetroIgnition => &meshes[0..],
+            DescentPhase::RetroFiring => &meshes[1..],
+            DescentPhase::AfterRetro | DescentPhase::TerminalDescent => &meshes[2..],
         };
         for (mesh, ofs) in meshes_used {
             self.ctx.AddMeshWithOffset(mesh.to_string(), &ofs);
@@ -321,14 +321,14 @@ impl Surveyor {
         oapi_create_vessel(new_object_name, classname.to_owned(), &vs);
     }
     fn jettison(&mut self) {
-        use SurveyorState::*;
-        match self.vehicle_state {
+        use DescentPhase::*;
+        match self.descent_phase {
             BeforeRetroIgnition => {
-                self.vehicle_state = RetroFiring;
+                self.descent_phase = RetroFiring;
                 self.spawn_object("Surveyor_AMR", "-AMR", &V!(0., 0., -0.6));
             }
             RetroFiring => {
-                self.vehicle_state = AfterRetro;
+                self.descent_phase = AfterRetro;
                 self.spawn_object("Surveyor_Retro", "-Retro", &V!(0., 0., -0.5));
             }
             _ => {}
@@ -562,7 +562,7 @@ impl OrbiterVessel for Surveyor {
         }
 
         // Compute vehicle state
-        if self.vehicle_state == SurveyorState::BeforeRetroIgnition
+        if self.descent_phase == DescentPhase::BeforeRetroIgnition
         {
             self.attitude_mode = AttitudeMode::GravityTurn;
             if altitude < RETRO_IGNITION_ALTITUDE
@@ -570,13 +570,13 @@ impl OrbiterVessel for Surveyor {
                 debug_string!("Firing retro. altitude = {:.2} mi", altitude / MI_IN_M);
                 // Store the current z-axis orientation in global coordinates
                 self.ctx.SetThrusterLevel(self.th_retro, 1.0);
-                // vehicle_state will be set after AMR is jettisoned 
+                // descent_phase will be set after AMR is jettisoned 
             }else {
                 debug_string!("Waiting to fire retro ... altitude = {:.2} mi", altitude / MI_IN_M);
             }
-        }else if self.vehicle_state == SurveyorState::AfterRetro {
+        }else if self.descent_phase == DescentPhase::AfterRetro {
             self.attitude_mode = AttitudeMode::GravityTurn;
-            // self.vehicle_state = SurveyorState::TerminalDescent;
+            // self.descent_phase = DescentPhase::TerminalDescent;
             if altitude < 14.0 * FT_IN_M
             {
                 self.attitude_mode = AttitudeMode::Off;
@@ -588,13 +588,13 @@ impl OrbiterVessel for Surveyor {
                 self.ctx.Local2Global(&V!(0., 0., 1.), &mut target_orientation_global);
                 self.attitude_mode = AttitudeMode::InertialLock(target_orientation_global);
             }
-        }else if self.vehicle_state == SurveyorState::RetroFiring
+        }else if self.descent_phase == DescentPhase::RetroFiring
         {
             debug_string!("Altitude: {:.2} ft", altitude/FT_IN_M);
         }
 
         // Get current main thruster level
-        let reference_thrust  = if self.vehicle_state == SurveyorState::AfterRetro && altitude > 14.0 * FT_IN_M {
+        let reference_thrust  = if self.descent_phase == DescentPhase::AfterRetro && altitude > 14.0 * FT_IN_M {
             let delta_thrust = if altitude >= 40000. * FT_IN_M
             // let delta_thrust = if altitude >= 109500.
             {
@@ -606,7 +606,7 @@ impl OrbiterVessel for Surveyor {
                 debug_string!("Descent Contour, Altitude: {:.2} ft, Target vel: {:.2} ft/s, Current vel: {:.2} ft/s", altitude/FT_IN_M, target_vel/FT_IN_M, self.get_surface_approach_vel()/FT_IN_M);
                 if altitude < 60. * FT_IN_M 
                 {
-                    self.vehicle_state = SurveyorState::TerminalDescent;
+                    self.descent_phase = DescentPhase::TerminalDescent;
                 }
                 self.const_velocity_controller(target_vel)
             }else {
@@ -616,7 +616,7 @@ impl OrbiterVessel for Surveyor {
             // Clamp to 0.95 to have some control margin
             self.last_thrust_level = (self.last_thrust_level + delta_thrust).clamp(0.0, 0.95);
             self.last_thrust_level
-        }else if self.vehicle_state == SurveyorState::TerminalDescent
+        }else if self.descent_phase == DescentPhase::TerminalDescent
         {
             let delta_thrust = if altitude >= 10. * FT_IN_M
             {
@@ -660,13 +660,13 @@ impl OrbiterVessel for Surveyor {
             self.apply_thrusters(0., 0., 0., 0.);
         }
         
-        if self.vehicle_state == SurveyorState::RetroFiring
+        if self.descent_phase == DescentPhase::RetroFiring
             && self.ctx.GetPropellantMass(self.ph_retro) < 1.0
         {
             //Jettison the spent main retro
             self.jettison();
         }
-        if self.vehicle_state == SurveyorState::BeforeRetroIgnition
+        if self.descent_phase == DescentPhase::BeforeRetroIgnition
             && self.ctx.GetPropellantMass(self.ph_retro) < 0.999 * RETRO_PROP_MASS
         {
             //Jettison the AMR if the retro has started burning
