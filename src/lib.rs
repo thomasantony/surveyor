@@ -6,32 +6,10 @@ use orbiter_rs::{
     debug_string, oapi_create_vessel, OrbiterVessel, init_vessel, KeyStates, Key, FileHandle, ReferenceFrame,
     PropellantHandle, ThrusterHandle, Vector3, SDKVessel, VesselStatus, ThrusterGroupType, V,
 };
-use lazy_static::lazy_static;
 
 mod constants;
 use constants::*;
 
-lazy_static! {
-    static ref SURVEYOR_PMI: Vector3 = V!(0.50, 0.50, 0.50);
-    static ref THRUSTER1_POS: Vector3 = V!(0.0 * VERNIER_RAD, 1.0 * VERNIER_RAD, VERNIER_Z);
-    static ref THRUSTER2_POS: Vector3 = V!(
-        (60.0f64).to_radians().sin() * VERNIER_RAD,
-        -0.5 * VERNIER_RAD,
-        VERNIER_Z
-    );
-    static ref THRUSTER3_POS: Vector3 = V!(
-        -(60.0f64).to_radians().sin() * VERNIER_RAD,
-        -0.5 * VERNIER_RAD,
-        VERNIER_Z
-    );
-
-    static ref DIR_X_PLUS: Vector3 = V!(1., 0., 0.);
-    static ref DIR_X_MINUS: Vector3 = V!(-1., 0., 0.);
-    static ref DIR_Y_PLUS: Vector3 = V!(0., 1., 0.);
-    static ref DIR_Y_MINUS: Vector3 = V!(0., -1., 0.);
-    static ref DIR_Z_PLUS: Vector3 = V!(0., 0., 1.);
-    static ref DIR_Z_MINUS: Vector3 = V!(0., 0., 1.);
-}
 
 #[derive(Debug, PartialEq)]
 enum DescentPhase {
@@ -454,7 +432,7 @@ impl Surveyor {
     fn compute_rotation(&self, target_orientation: &Vector3) -> (Vector3, f64)
     {
         // Roll axis is the direction of thrust for vernier thrusters
-        let roll_axis = V!(0., 0., 1.);
+        let roll_axis = DIR_Z_PLUS;
 
         // We need to use a controller to drive `rotation_angle` to zero
         let rotation_angle = roll_axis.dot(target_orientation).acos();
@@ -462,7 +440,7 @@ impl Surveyor {
         // Avoid divide-by-zero
         if  rotation_angle.is_nan() || rotation_angle.abs() < 1e-3
         {
-            (V!(0., 1., 0.), 0.)
+            (DIR_Y_PLUS, 0.)
         }else{
             // We compute the require rotation in angle-axis form
             // Compute axis perpendicular to initial and final orientation of roll-axis

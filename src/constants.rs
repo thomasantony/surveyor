@@ -1,3 +1,5 @@
+use orbiter_rs::Vector3;
+
 /// Constants
 pub const VERNIER_PROP_MASS: f64 = 70.98;
 pub const VERNIER_ISP: f64 = 3200.0;
@@ -44,3 +46,32 @@ pub const RETRO_IGNITION_ALTITUDE: f64 = 48.0 * MI_IN_M;
 pub const DESCENT_CONTOUR_ALTITUDE: f64 = 40000.0 * FT_IN_M;
 pub const TERMINAL_DESCENT_ALTITUDE: f64 = 60. * FT_IN_M;
 pub const ENGINE_CUTOFF_ALTITUDE: f64 = 14.0 * FT_IN_M;
+
+const SIN_60_DEG: f64 = 0.86602540378;
+
+// Vector constants
+/// Mass-Normalized Principal Moments of Inertia
+pub const SURVEYOR_PMI: Vector3 = Vector3::new(0.50, 0.50, 0.50);
+
+/// Position of Thruster 1
+pub const THRUSTER1_POS: Vector3 = Vector3::new(0.0 * VERNIER_RAD, 1.0 * VERNIER_RAD, VERNIER_Z);
+/// Position of Thruster 2
+pub const THRUSTER2_POS: Vector3 = Vector3::new(
+    SIN_60_DEG * VERNIER_RAD,
+    -0.5 * VERNIER_RAD,
+    VERNIER_Z
+);
+/// Position of Thruster 3
+pub const THRUSTER3_POS: Vector3 = Vector3::new(
+     -SIN_60_DEG * VERNIER_RAD,
+    -0.5 * VERNIER_RAD,
+    VERNIER_Z
+);
+
+// Cardinal direction vectors
+pub const DIR_X_PLUS: Vector3 = Vector3::new(1., 0., 0.);
+pub const DIR_X_MINUS: Vector3 = Vector3::new(-1., 0., 0.);
+pub const DIR_Y_PLUS: Vector3 = Vector3::new(0., 1., 0.);
+// pub const DIR_Y_MINUS: Vector3 = Vector3::new(0., -1., 0.);
+pub const DIR_Z_PLUS: Vector3 = Vector3::new(0., 0., 1.);
+pub const DIR_Z_MINUS: Vector3 = Vector3::new(0., 0., 1.);
