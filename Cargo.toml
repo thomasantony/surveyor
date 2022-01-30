@@ -7,4 +7,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
+log = "0.4.14"
 orbiter-rs = {version = "0.2.2"}
+strum = { version = "0.23", features = ["derive"] }

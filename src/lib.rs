@@ -3,15 +3,17 @@
 /// This is a port of Surveyor.cpp to Rust
 /// 
 use orbiter_rs::{
-    debug_string, oapi_create_vessel, OrbiterVessel, init_vessel, KeyStates, Key, FileHandle, ReferenceFrame,
+    debug_string, oapi_create_vessel, OrbiterVessel, init_vessel, init_logging, KeyStates, Key, FileHandle, ReferenceFrame,
     PropellantHandle, ThrusterHandle, Vector3, SDKVessel, VesselStatus, ThrusterGroupType, V,
 };
 
 mod constants;
 use constants::*;
+use log::error;
+use strum::{EnumString, IntoStaticStr};
+use std::str::FromStr;
 
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, EnumString, IntoStaticStr)]
 enum DescentPhase {
     BeforeRetroIgnition,
     RetroFiring,
@@ -58,6 +60,7 @@ pub struct Surveyor {
 }
 impl Surveyor {
     pub fn new(vessel: SDKVessel) -> Self {
+        init_logging(log::Level::Info);
         Self {
             th_vernier: Vec::new(),
             th_rcs: Vec::new(),
@@ -545,6 +548,7 @@ impl OrbiterVessel for Surveyor {
             }
         }else if self.descent_phase == DescentPhase::RetroFiring
         {
+            self.attitude_mode = AttitudeMode::GravityTurn;
             debug_string!("Altitude: {:.2} ft", altitude/FT_IN_M);
         }
 
@@ -679,6 +683,25 @@ impl OrbiterVessel for Surveyor {
                 0
             }
         }
+    }
+    fn on_load_param(&mut self, param_data: &str) -> bool {
+        if param_data.starts_with("DESCENT_PHASE")
+        {
+            let descent_phase_str = &param_data[14..];
+            if let Ok(descent_phase) = DescentPhase::from_str(descent_phase_str)
+            {
+                self.descent_phase = descent_phase;
+            }else{
+                error!("Failed to parse DESCENT_PHASE from scenario: {}", descent_phase_str);
+            }
+            true
+        }else{
+            false
+        }
+    }
+    fn on_save_state(&mut self, scn: &FileHandle) {
+        let descent_phase_str: &'static str = self.descent_phase.clone().into();
+        scn.write_scenario_string("DESCENT_PHASE", descent_phase_str);
     }
 }
 
