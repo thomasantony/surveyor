@@ -34,7 +34,6 @@ pub const PITCH_RATE_GAIN: f64 = 4.0;
 pub const YAW_RATE_GAIN: f64 = 2.0;
 pub const ROLL_RATE_GAIN: f64 = 10.0;
 pub const THRUST_CONTROL_GAIN: f64 = 0.01;
-pub const CONST_VEL_THRUST_GAIN: f64 = 0.1;
 pub const LUNAR_GRAVITY: f64 = 1.625; // m/s^2
 
 // Unit conversions

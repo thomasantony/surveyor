@@ -344,8 +344,8 @@ impl Surveyor {
         
         (F_1, reference_thrust_level+F_2, reference_thrust_level+F_3, theta_1)
     }
-    /// Get the desired velocity to be on the descent contour
-    fn get_descent_contour_velocity(&self, altitude: f64) -> f64
+    /// Get the desired velocity and acceleration to be on the descent contour
+    fn get_descent_contour_velocity(&self, altitude: f64) -> (f64, f64)
     {
         let descent_contour = [
             (DESCENT_CONTOUR_ALTITUDE, 705. * FT_IN_M),
@@ -367,14 +367,16 @@ impl Surveyor {
 
         if index == 0
         {
-            -descent_contour[0].1
+            (-descent_contour[0].1, 0.)
         }else{
             let (h0, v0) = descent_contour[index-1];
             let (h1, v1) = descent_contour[index];
 
             let dhdv = (h0-h1)/(v0-v1);
+
+            let nominal_acc = (v1*v1 - v0*v0)/(2.0*(h0-h1)) + LUNAR_GRAVITY;
             // Make sure the velocity is negative to match sign convention
-            -(v1 + (altitude - h1)/dhdv)
+            (-(v1 + (altitude - h1)/dhdv), nominal_acc)
         }
     }
     /// Computes requires thrust level to maintain a constant acceleration
@@ -386,11 +388,11 @@ impl Surveyor {
         thrust_change
     }
     /// Computes requires thrust level to maintain constant velocity
-    fn const_velocity_controller(&self, target_vel: f64) -> f64
+    fn const_velocity_controller(&self, target_vel: f64, sim_dt: f64) -> f64
     {
         let current_vel = self.get_surface_approach_vel();
-        let thrust_change = CONST_VEL_THRUST_GAIN*(target_vel - current_vel);
-        thrust_change
+        let delta_acc = (target_vel - current_vel)/sim_dt;
+        self.const_acc_controller(delta_acc + LUNAR_GRAVITY)
     }
 
     /// Computes angular velocity to be commanded to achieve desired orientation
@@ -511,7 +513,7 @@ impl OrbiterVessel for Surveyor {
         self.setup_meshes()
     }
     #[allow(non_snake_case)]
-    fn on_pre_step(&mut self, _sim_t: f64, _sim_dt: f64, _mjd: f64) {
+    fn on_pre_step(&mut self, _sim_t: f64, sim_dt: f64, _mjd: f64) {
         self.ctx.SetEmptyMass(self.calc_empty_mass());
         
         let altitude = self.get_altitude();
@@ -559,14 +561,22 @@ impl OrbiterVessel for Surveyor {
                 debug_string!("Constant Acceleration Mode, Altitude: {:.2} ft", altitude/FT_IN_M);
                 self.const_acc_controller(0.9 * LUNAR_GRAVITY)
             }else if altitude > TERMINAL_DESCENT_ALTITUDE - 5.0 {
-                // Approximate dsescent contour
-                let target_vel = self.get_descent_contour_velocity(altitude);
+                // Approximate descent contour
+                let (target_vel, target_acc) = self.get_descent_contour_velocity(altitude);
+                let current_vel = self.get_surface_approach_vel();
+                
                 debug_string!("Descent Contour, Altitude: {:.2} ft, Target vel: {:.2} ft/s, Current vel: {:.2} ft/s", altitude/FT_IN_M, target_vel/FT_IN_M, self.get_surface_approach_vel()/FT_IN_M);
                 if altitude < TERMINAL_DESCENT_ALTITUDE
                 {
                     self.descent_phase = DescentPhase::TerminalDescent;
                 }
-                self.const_velocity_controller(target_vel)
+                let delta_acc = if (target_vel - current_vel).abs() > 0.05
+                {
+                    (target_vel - current_vel)/sim_dt
+                }else{
+                    0.
+                };
+                self.const_acc_controller(target_acc + delta_acc)
             }else {
                 0.
             };
@@ -579,7 +589,7 @@ impl OrbiterVessel for Surveyor {
             let delta_thrust = if altitude >= ENGINE_CUTOFF_ALTITUDE
             {
                 // Constant velocity
-                let delta_th = self.const_velocity_controller(-1.5);
+                let delta_th = self.const_velocity_controller(-1.5, sim_dt);
                 debug_string!("Terminal Descent, Altitude: {:.2} ft, Current vel: {:.2} ft/s", altitude/FT_IN_M, self.get_surface_approach_vel()/FT_IN_M);
                 delta_th
             }else{
@@ -588,7 +598,7 @@ impl OrbiterVessel for Surveyor {
                 {
                     debug_string!("Touchdown!");
                 }else{
-                    debug_string!("Freefall");
+                    debug_string!("Altitude: {:.2} ft", altitude/FT_IN_M);
                 }
                 0.
             };
