@@ -55,17 +55,11 @@ pub const SURVEYOR_PMI: Vector3 = Vector3::new(0.50, 0.50, 0.50);
 /// Position of Thruster 1
 pub const THRUSTER1_POS: Vector3 = Vector3::new(0.0 * VERNIER_RAD, 1.0 * VERNIER_RAD, VERNIER_Z);
 /// Position of Thruster 2
-pub const THRUSTER2_POS: Vector3 = Vector3::new(
-    SIN_60_DEG * VERNIER_RAD,
-    -0.5 * VERNIER_RAD,
-    VERNIER_Z
-);
+pub const THRUSTER2_POS: Vector3 =
+    Vector3::new(SIN_60_DEG * VERNIER_RAD, -0.5 * VERNIER_RAD, VERNIER_Z);
 /// Position of Thruster 3
-pub const THRUSTER3_POS: Vector3 = Vector3::new(
-     -SIN_60_DEG * VERNIER_RAD,
-    -0.5 * VERNIER_RAD,
-    VERNIER_Z
-);
+pub const THRUSTER3_POS: Vector3 =
+    Vector3::new(-SIN_60_DEG * VERNIER_RAD, -0.5 * VERNIER_RAD, VERNIER_Z);
 
 // Cardinal direction vectors
 pub const DIR_X_PLUS: Vector3 = Vector3::new(1., 0., 0.);
