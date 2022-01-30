@@ -570,12 +570,7 @@ impl OrbiterVessel for Surveyor {
                 {
                     self.descent_phase = DescentPhase::TerminalDescent;
                 }
-                let delta_acc = if (target_vel - current_vel).abs() > 0.05
-                {
-                    (target_vel - current_vel)/sim_dt
-                }else{
-                    0.
-                };
+                let delta_acc = (target_vel - current_vel)/sim_dt;
                 self.const_acc_controller(target_acc + delta_acc)
             }else {
                 0.
@@ -600,13 +595,11 @@ impl OrbiterVessel for Surveyor {
                 }else{
                     debug_string!("Altitude: {:.2} ft", altitude/FT_IN_M);
                 }
+                self.last_thrust_level = 0.;
                 0.
             };
-            // let ref_thrust_force = self.calc_vehicle_mass() * LUNAR_GRAVITY;
-            // let ref_thrust_level = ref_thrust_force / (3. * VERNIER_THRUST);
 
             // Clamp to 0.95 to have some control margin
-            // (ref_thrust_level + delta_thrust).clamp(0.0, 0.95)
             self.last_thrust_level = (self.last_thrust_level + delta_thrust).clamp(0.0, 0.95);
             self.last_thrust_level
         }else {
@@ -621,7 +614,7 @@ impl OrbiterVessel for Surveyor {
 
         // Compute thrust values required to satisfy acceleration and attitude-control targets
         let (F_1, F_2, F_3, th1) = self.compute_thrust_from_ang_acc(vehicle_mass, reference_thrust, & angular_acc, 0.05);
-        if altitude > 5. * FT_IN_M && !self.ctx.GroundContact()
+        if altitude > ENGINE_CUTOFF_ALTITUDE && !self.ctx.GroundContact()
         {
             self.apply_thrusters(F_1, F_2, F_3, th1);
         }else {
