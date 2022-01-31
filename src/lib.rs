@@ -483,7 +483,7 @@ impl Surveyor {
     }
 
     fn get_altitude(&self) -> f64 {
-        self.ctx.GetAltitude() - self.ctx.GetSurfaceElevation()
+        (self.ctx.GetAltitude() - self.ctx.GetSurfaceElevation() - RADAR_Z_OFFSET).max(0.)
     }
     /// Used in terminal phase after ~10000 ft or ~3km
     fn get_surface_approach_vel(&self) -> f64 {
@@ -523,10 +523,6 @@ impl OrbiterVessel for Surveyor {
         self.ctx.SetEmptyMass(self.calc_empty_mass());
 
         let altitude = self.get_altitude();
-
-        if altitude < 1.0 {
-            return;
-        }
 
         // Compute vehicle and attitude control state
         if self.descent_phase == DescentPhase::BeforeRetroIgnition {
@@ -626,6 +622,7 @@ impl OrbiterVessel for Surveyor {
         if altitude > ENGINE_CUTOFF_ALTITUDE && !self.ctx.GroundContact() {
             self.apply_thrusters(F_1, F_2, F_3, th1);
         } else {
+            debug_string!("Altitude: {:.2} ft", altitude / FT_IN_M);
             self.apply_thrusters(0., 0., 0., 0.);
         }
 

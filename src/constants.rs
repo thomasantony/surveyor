@@ -68,3 +68,6 @@ pub const DIR_Y_PLUS: Vector3 = Vector3::new(0., 1., 0.);
 // pub const DIR_Y_MINUS: Vector3 = Vector3::new(0., -1., 0.);
 pub const DIR_Z_PLUS: Vector3 = Vector3::new(0., 0., 1.);
 pub const DIR_Z_MINUS: Vector3 = Vector3::new(0., 0., 1.);
+
+/// Height of radar over the touchdown points
+pub const RADAR_Z_OFFSET: f64 = 0.6;
