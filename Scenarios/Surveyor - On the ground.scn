@@ -18,4 +18,5 @@ Surveyor1:Surveyor
   BASE Brighton Beach:1
   HEADING 90.00
   PRPLEVEL 0:1.000
+  DESCENT_PHASE TerminalDescent
 END
